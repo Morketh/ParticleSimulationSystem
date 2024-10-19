@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS `nodes` (
   `last_heartbeat` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp() COMMENT 'Timestamp for the last activity.',
   `cpu_cores` int(11) NOT NULL COMMENT 'The number of CPU cores available on the node.',
   `memory_gb` float NOT NULL DEFAULT 0 COMMENT 'The amount of memory (in GB) available on the node',
-  PRIMARY KEY (`node_id`)
+  PRIMARY KEY (`node_id`),
+  KEY `role` (`role`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Keeps track of rendering nodes (computers).';
 
 -- Data exporting was unselected.
@@ -84,7 +85,8 @@ CREATE TABLE IF NOT EXISTS `render_jobs` (
   `antialias_depth` int(10) unsigned NOT NULL DEFAULT 5,
   `antialias_threshold` float unsigned NOT NULL DEFAULT 0.1,
   `sampling_method` int(11) DEFAULT 2,
-  PRIMARY KEY (`job_id`)
+  PRIMARY KEY (`job_id`),
+  KEY `status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Keeps track of rendering jobs';
 
 -- Data exporting was unselected.
