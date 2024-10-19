@@ -142,3 +142,17 @@ texture {
     }
     scale <0.5, 0.5, 0.5>  // Overall scale for both textures
 }
+
+//def GetCITexture():
+//    """Returns the CI Texture
+//    Green and Black Marble with touches of sky blue"""
+//    CI_ColorMap = ColorMap([0.0,  'rgb', [0.0, 0.0, 0.0]],
+//                           [0.7,  'rgb', [0.0, 0.3, 0.0]],
+//                           [0.5,  'rgb', [0.0, 0.7, 0.0]],
+//                           [0.6,  'rgb', [0.0, 0.2, 0.0]],
+//                           [0.65, 'rgb', [0.0, 1.0, 1.0]],
+//                           [0.75, 'rgb', [0.0, 0.2, 0.0]],
+//                           [0.8,  'rgb', [0.0, 0.5, 0.0]],
+//                           [1.0,  'rgb', [0.0, 1.0, 0.0]])
+//
+//    return Texture(Pigment('marble', 'turbulence', 2.75, CI_ColorMap, 'scale', 2.5, 'rotate', [0, 7.5 ,0]))

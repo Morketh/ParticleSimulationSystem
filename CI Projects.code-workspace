@@ -5,6 +5,10 @@
 		},
 		{
 			"path": "../v3.7"
+		},
+		{
+			"name": "AnimatedFountain",
+			"path": "../AnimatedFountain"
 		}
 	],
 	"settings": {},
