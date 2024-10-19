@@ -1,5 +1,5 @@
 -- --------------------------------------------------------
--- Host:                         127.0.0.1
+-- Host:                         10.147.18.167
 -- Server version:               11.4.3-MariaDB-1 - Debian n/a
 -- Server OS:                    debian-linux-gnu
 -- HeidiSQL Version:             12.8.0.6908
@@ -16,12 +16,10 @@
 
 
 -- Dumping database structure for povray
-DROP DATABASE IF EXISTS `povray`;
 CREATE DATABASE IF NOT EXISTS `povray` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci */;
 USE `povray`;
 
 -- Dumping structure for table povray.frames
-DROP TABLE IF EXISTS `frames`;
 CREATE TABLE IF NOT EXISTS `frames` (
   `frame_id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier.',
   `job_id` int(11) NOT NULL COMMENT 'Links to the corresponding job.',
@@ -37,19 +35,21 @@ CREATE TABLE IF NOT EXISTS `frames` (
 -- Data exporting was unselected.
 
 -- Dumping structure for table povray.nodes
-DROP TABLE IF EXISTS `nodes`;
 CREATE TABLE IF NOT EXISTS `nodes` (
   `node_id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier.',
   `node_name` varchar(255) NOT NULL COMMENT ' Identifier (like IP or hostname).',
-  `status` enum('active','inactive') DEFAULT 'active' COMMENT 'Active or inactive.',
-  `last_heartbeat` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp() COMMENT 'Timestamp for the last activity.',
+  `ip_address` varchar(45) NOT NULL DEFAULT 'active' COMMENT 'Stores the IP address of the node ',
+  `role` enum('master','render','database','storage','monitor') NOT NULL COMMENT 'Node Role',
+  `status` enum('active','inactive') NOT NULL DEFAULT 'active' COMMENT 'Active or inactive.',
+  `last_heartbeat` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp() COMMENT 'Timestamp for the last activity.',
+  `cpu_cores` int(11) NOT NULL COMMENT 'The number of CPU cores available on the node.',
+  `memory_gb` float NOT NULL DEFAULT 0 COMMENT 'The amount of memory (in GB) available on the node',
   PRIMARY KEY (`node_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Keeps track of rendering nodes (computers).';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Keeps track of rendering nodes (computers).';
 
 -- Data exporting was unselected.
 
 -- Dumping structure for table povray.particles
-DROP TABLE IF EXISTS `particles`;
 CREATE TABLE IF NOT EXISTS `particles` (
   `particle_id` int(11) NOT NULL AUTO_INCREMENT,
   `frame_id` int(11) NOT NULL,
@@ -71,7 +71,6 @@ CREATE TABLE IF NOT EXISTS `particles` (
 -- Data exporting was unselected.
 
 -- Dumping structure for table povray.render_jobs
-DROP TABLE IF EXISTS `render_jobs`;
 CREATE TABLE IF NOT EXISTS `render_jobs` (
   `job_id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier.',
   `job_name` varchar(255) NOT NULL COMMENT 'Name of the job.',
@@ -91,7 +90,6 @@ CREATE TABLE IF NOT EXISTS `render_jobs` (
 -- Data exporting was unselected.
 
 -- Dumping structure for table povray.work_threads
-DROP TABLE IF EXISTS `work_threads`;
 CREATE TABLE IF NOT EXISTS `work_threads` (
   `thread_id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier.',
   `node_id` int(11) NOT NULL COMMENT 'Links to the corresponding node.',

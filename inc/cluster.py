@@ -2,80 +2,184 @@ import MySQLdb
 import time
 from datetime import datetime
 import socket
+import psutil
 import sys
 
-class DB:
-    conn = None
-    host="10.147.18.167"
-    port=3306
-    user="povray"
-    password="123qwe"
-    database="povray"
+class ClusterManager:
+    def __init__(self, h, u, p, db):
+        self.conn = None
+        self.cursor = None
+        self.host=h
+        self.port=p
+        self.user=u
+        self.password=p
+        self.database=db
 
 # Function to connect to the MySQL database
     def connect(self):
-        self.conn = MySQLdb.Connect(host=self.host,user=self.user,passwd=self.password,db=self.database,port=self.port)
-
-    def fetch(self, sql):
+        """Connect to the database."""
         try:
-            cursor = self.conn.cursor()
-            cursor.execute(sql)
-        except (AttributeError, MySQLdb.OperationalError):
-            self.connect()
-            cursor = self.conn.cursor()
-            cursor.execute(sql)
-        finally:
-            self.conn.commit()
-            return cursor.lastrowid
+            self.conn = MySQLdb.Connect(host=self.host,user=self.user,passwd=self.password,db=self.database,port=self.port)
+            self.cursor = self.conn.cursor()
+            print("Connection established")
+        except MySQLdb.Error as e:
+            print("Error connecting to database: {}".format(e))
+    
+    def disconnect(self):
+        """Close the connection to the database."""
+        if self.cursor:
+            self.cursor.close()
+        if self.conn:
+            self.conn.close()
+        print("Connection closed")
 
-    
-    def BulkInsert(self, sql, data):
-        try:
-            cursor = self.conn.cursor()
-            cursor.executemany(sql, data)
-        except (AttributeError, MySQLdb.OperationalError):
-            self.connect()
-            cursor = self.conn.cursor()
-            cursor.executemany(sql, data)
-        finally:
-            self.conn.commit()
-            return cursor.lastrowid
-
-def insert_particle_data_batch(conn, fnum, particle_data):
-    """
-    Insert particle data in batches into the MySQL database.
-    
-    :param conn: MySQL database connection object
-    :param particle_data: List of tuples containing particle data for batch insert
-    """
-    
-    # Perform batch insert for all particles in this frame
-    #print("Query Size {}".format(sys.getsizeof(particle_data)))
-    bulk_sql = """
+    def insert_particle_data(self, job_id, frame_id, particle_data):
+        """Insert multiple rows of particle data."""
+        query = """
             INSERT INTO particles (frame_id, job_id, position_x, position_y, position_z,
                                   velocity_x, velocity_y, velocity_z, size, texture)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        #print("Number of rows inserted: {}".format(cursor.rowcount))
+        try:
+            self.cursor.executemany(query, particle_data)
+            self.conn.commit()
+            print(f"Inserted {self.cursor.rowcount} particles for frame {frame_id}")
+        except MySQLdb.Error as e:
+            print(f"Error inserting particle data: {e}")
+            self.conn.rollback()
 
-def fetch_job(conn):
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM render_jobs WHERE status = 'pending' LIMIT 1")
-    job = cursor.fetchone()
-    if job:
-        cursor.execute("UPDATE render_jobs SET status = 'in_progress' WHERE id = %s", (job['id'],))
-        conn.commit()
-    return job
+    def fetch_frame_by_job(self, job_id):
+        """Fetch all frames for a given job."""
+        query = "SELECT * FROM frames WHERE job_id = %s"
+        try:
+            self.cursor.execute(query, (job_id,))
+            frames = self.cursor.fetchall()
+            return frames
+        except MySQLdb.Error as e:
+            print(f"Error fetching frames: {e}")
+            return None
 
-def mark_job_done(frame_num, conn):
-    cursor = conn.cursor()
-    cursor.execute("UPDATE render_jobs SET status = 'done' WHERE frame_num = %s", (frame_num,))
-    conn.commit()
+    def insert_frames(self, job_id, num_frames):
+        query = """
+                INSERT INTO frames (job_id, frame_num, status)
+                VALUES (%s, %s, %s)
+            """
+        try:
+            for frame_number in range(1, num_frames + 1):
+                print(f"Adding frames: {frame_number/num_frames*100:.2f}%", end='\r', flush=True)
+                self.cursor.execute(query, (job_id, frame_number, 'pending'))
 
-def fetch_particles_for_frame(conn, frame_num):
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM particles WHERE frame_num = %s", (frame_num,))
-    return cursor.fetchall()
+            print("Adding frames: 100.00%  Done.")
+            self.conn.commit()
+
+            print(f"Submitted job {job_id} with {num_frames} frames.")
+            return job_id
+        except MySQLdb.Error as e:
+            print(f"Error adding frames: {e}")
+            return None
+
+    def update_frame_status(self, frame_id, status):
+        """Update the status of a frame."""
+        query = "UPDATE frames SET status = %s WHERE frame_id = %s"
+        try:
+            self.cursor.execute(query, (status, frame_id))
+            self.conn.commit()
+            print(f"Updated frame {frame_id} to status {status}")
+        except MySQLdb.Error as e:
+            print(f"Error updating frame status: {e}")
+            self.conn.rollback()
+
+    def create_job(self, job_name, num_frames, res_x, res_y, quality, antialias,
+                antialias_depth, antialias_threshold, sampling_method):
+        """Insert a new job into the render_jobs table."""
+        query = """"
+        INSERT INTO render_jobs (job_name, status, created_at,
+                   total_frames, width, height, quality,
+                   antialias, antialias_depth,
+                   antialias_threshold, sampling_method)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, 
+        try:
+            self.cursor.execute(query, (job_name, 'pending', datetime.now(),
+                num_frames, res_x, res_y, quality, antialias,
+                antialias_depth, antialias_threshold, sampling_method))
+            self.conn.commit()
+            job_id = self.cursor.lastrowid
+            print(f"Created job {job_name} with job_id {job_id}")
+            return job_id
+        except MySQLdb.Error as e:
+            print(f"Error creating job: {e}")
+            self.conn.rollback()
+            return None
+
+    def get_available_frames(self, job_id):
+        """Get the next available frame for rendering (i.e., not started)."""
+        query = "SELECT frame_id FROM frames WHERE job_id = %s AND status = 'not_started' LIMIT 1"
+        try:
+            self.cursor.execute(query, (job_id,))
+            frame = self.cursor.fetchone()
+            return frame
+        except MySQLdb.Error as e:
+            print(f"Error fetching available frame: {e}")
+            return None
+    
+    def get_active_render_nodes(self):
+        """Fetch all active render nodes."""
+        query = "SELECT * FROM nodes WHERE role = 'render' AND status = 'active'"
+        try:
+            self.cursor.execute(query)
+            render_nodes = self.cursor.fetchall()
+            return render_nodes
+        except MySQLdb.Error as e:
+            print(f"Error fetching render nodes: {e}")
+            return None
+        
+    def get_node_info(self):
+        """Fetch the current machine's IP address, CPU cores, and memory (GB)."""
+        # Get IP address
+        hostname = socket.gethostname()
+        ip_address = socket.gethostbyname(hostname)
+        
+        # Get CPU cores
+        cpu_cores = psutil.cpu_count(logical=True)
+        
+        # Get total memory in GB
+        memory_info = psutil.virtual_memory()
+        memory_gb = round(memory_info.total / (1024 ** 3), 2)  # Convert bytes to GB
+        
+        return ip_address, cpu_cores, memory_gb
+
+    def insert_node_info(self):
+        """Insert the node's info into the database."""
+        ip_address, cpu_cores, memory_gb = self.get_node_info()
+        query = """
+        INSERT INTO nodes (ip_address, cpu_cores, memory_gb, status, role)
+        VALUES (%s, %s, %s, %s, %s)
+        """
+        try:
+            # Assuming this is an active render node by default
+            self.cursor.execute(query, (ip_address, cpu_cores, memory_gb, 'active', 'render'))
+            self.conn.commit()
+            print(f"Inserted node with IP: {ip_address}, CPU: {cpu_cores} cores, Memory: {memory_gb} GB")
+        except MySQLdb.Error as e:
+            print(f"Error inserting node info: {e}")
+        finally:
+            self.cursor.close()
+            self.conn.close()
+    
+    def get_node_info(self):
+        """Fetch ip_address, cpu_cores, and memory_gb for all nodes."""
+        query = "SELECT ip_address, cpu_cores, memory_gb FROM nodes"
+        try:
+            self.cursor.execute(query)
+            nodes = self.cursor.fetchall()
+            return nodes
+        except MySQLdb.Error as e:
+            print(f"Error fetching node info: {e}")
+            return None
+        finally:
+            self.conn.commit()
+
 
 def job_scheduler(conn):
     while True:
@@ -94,47 +198,8 @@ def job_scheduler(conn):
         
         time.sleep(5)  # Wait before checking again
 
-def submit_render_job(conn, job_name, num_frames,
-                      res_x=1920, res_y=1080, quality=11, antialias='on',
-                      antialias_depth=5, antialias_threshold=0.1, sampling_method=2):
-    cursor = conn.cursor()
-
-    # Insert new job into render_jobs table
-    cursor.execute("""
-        INSERT INTO render_jobs (job_name, status, created_at,
-                   total_frames, width, height, quality,
-                   antialias, antialias_depth,
-                   antialias_threshold, sampling_method)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """, (job_name, 'pending', datetime.now(),
-           num_frames, res_x, res_y, quality, antialias,
-           antialias_depth, antialias_threshold, sampling_method))
-    
-    job_id = cursor.lastrowid  # Get the job_id of the newly inserted job
-    conn.commit()
 
     # Insert frames into the frames table
-    for frame_number in range(1, num_frames + 1):
-        print(f"Adding frames: {frame_number/num_frames*100:.2f}%", end='\r', flush=True)
-        cursor.execute("""
-            INSERT INTO frames (job_id, frame_num, status)
-            VALUES (%s, %s, %s)
-        """, (job_id, frame_number, 'pending'))
-
-    print("Adding frames: 100.00%  Done.")
-    conn.commit()
-    
-    print(f"Submitted job {job_id} with {num_frames} frames.")
-    return job_id
-
-def InitNode(conn, node_name=socket.gethostname()):
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO nodes (node_name) VALUES (%s)
-    """, (node_name,))
-    conn.commit()
-    return cursor.lastrowid  # Return the node_id
-
 # Function to create work threads for a job
 def create_work_threads(conn, job_id, frame_ids, node_id):
     cursor = conn.cursor()
