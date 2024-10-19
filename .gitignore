@@ -319,3 +319,4 @@ Generator/.vs/
 Generator/__temp__.pov
 *.data
 output/*
+.env

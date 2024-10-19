@@ -2,6 +2,28 @@ import numpy as np
 from inc import particles
 from inc.cluster import *
 
+def generate_batch_data(job_id, frame_id, particles):
+    """
+    Generate a list of particle data for batch insert.
+    
+    :param job_id: ID of the rendering job
+    :param frame_num: Frame number in the simulation
+    :param particles: List of particle dictionaries containing particle data
+    :return: List of tuples for batch insert
+    """
+    particle_data = []
+    
+    for particle_id, particle in enumerate(particles):
+        # Append each particle's data as a tuple for batch insertion
+        particle_data.append((
+            job_id, frame_id,
+            particle['position'][0], particle['position'][1], particle['position'][2],
+            particle['velocity'][0], particle['velocity'][1], particle['velocity'][2],
+            particle['size'], particle['texture']
+        ))
+    
+    return particle_data
+
 # Update the main simulation part to use the new function
 if __name__ == "__main__":
 
@@ -45,6 +67,5 @@ for frame_num in range(num_frames):
     # Insert all particles for this frame in one batch
     insert_particle_data_batch(conn, frame_num+1, particle_data_batch)
  
-
     conn.close()
 print("Inserting Frame Data: 100%  Done.")
