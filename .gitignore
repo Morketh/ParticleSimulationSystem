@@ -318,3 +318,4 @@ Generator/.vs/
 *.mp4
 Generator/__temp__.pov
 *.data
+output/*
