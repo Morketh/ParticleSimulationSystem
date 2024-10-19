@@ -57,7 +57,9 @@ class ClusterManager:
 
 # Function to connect to the MySQL database
     def connect(self):
-        """Connect to the database."""
+        """
+        Establishes a connection to the MySQL database using the provided credentials.
+        """
         try:
             self.conn = MySQLdb.Connect(host=self.host,user=self.user,passwd=self.password,db=self.database,port=self.port)
             self.cursor = self.conn.cursor()
@@ -66,7 +68,9 @@ class ClusterManager:
             print("Error connecting to database: {}".format(e))
     
     def disconnect(self):
-        """Close the connection to the database."""
+        """
+        Closes the connection to the database and the cursor.
+        """
         if self.cursor:
             self.cursor.close()
         if self.conn:
@@ -74,7 +78,13 @@ class ClusterManager:
         print("Connection closed")
 
     def insert_particle_data(self, job_id, frame_id, particle_data):
-        """Insert multiple rows of particle data."""
+        """
+        Inserts multiple frames into the frames table for a given job.
+
+        Args:
+            job_id (int): The ID of the job.
+            num_frames (int): The number of frames to insert.
+        """
         query = """
             INSERT INTO particles (frame_id, job_id, position_x, position_y, position_z,
                                   velocity_x, velocity_y, velocity_z, size, texture)
@@ -89,7 +99,15 @@ class ClusterManager:
             self.conn.rollback()
 
     def fetch_frame_by_job(self, job_id):
-        """Fetch all frames for a given job."""
+        """
+        Fetches all frames associated with a given job.
+
+        Args:
+            job_id (int): The ID of the job.
+
+        Returns:
+            list: A list of frames associated with the job.
+        """
         query = "SELECT * FROM frames WHERE job_id = %s"
         try:
             self.cursor.execute(query, (job_id,))
@@ -100,6 +118,13 @@ class ClusterManager:
             return None
 
     def insert_frames(self, job_id, num_frames):
+        """
+        Inserts multiple frames into the frames table for a given job.
+
+        Args:
+            job_id (int): The ID of the job.
+            num_frames (int): The number of frames to insert.
+        """
         query = """
                 INSERT INTO frames (job_id, frame_num, status)
                 VALUES (%s, %s, %s)
@@ -119,7 +144,13 @@ class ClusterManager:
             return None
 
     def update_frame_status(self, frame_id, status):
-        """Update the status of a frame."""
+        """
+        Updates the status of a specific frame in the frames table.
+
+        Args:
+            frame_id (int): The ID of the frame.
+            status (str): The new status of the frame (e.g., 'rendering', 'completed').
+        """
         query = "UPDATE frames SET status = %s WHERE frame_id = %s"
         try:
             self.cursor.execute(query, (status, frame_id))
@@ -131,7 +162,20 @@ class ClusterManager:
 
     def create_job(self, job_name, num_frames, res_x, res_y, quality, antialias,
                 antialias_depth, antialias_threshold, sampling_method):
-        """Insert a new job into the render_jobs table."""
+        """
+        Creates a new render job in the render_jobs table.
+
+        Args:
+            job_name (str): The name of the job.
+            num_frames (int): The total number of frames in the job.
+            res_x (int): The width of the render in pixels.
+            res_y (int): The height of the render in pixels.
+            quality (int): The quality setting for the render.
+            antialias (bool): Whether antialiasing is enabled.
+            antialias_depth (int): The depth of antialiasing.
+            antialias_threshold (float): The antialiasing threshold.
+            sampling_method (int): The method of sampling for antialiasing.
+        """
         query = """"
         INSERT INTO render_jobs (job_name, status, created_at,
                    total_frames, width, height, quality,
@@ -234,6 +278,28 @@ class ClusterManager:
         finally:
             self.conn.commit()
 
+    def create_work_threads(self, job_id, frame_ids, node_id):
+        """
+        Creates work threads for the given frames, assigning them to a specific node for rendering.
+
+        Args:
+            job_id (int): The ID of the job.
+            frame_ids (list): List of frame IDs to assign to work threads.
+            node_id (int): The ID of the node handling the frames.
+        """
+        query = """
+            INSERT INTO work_threads (node_id, job_id, frame_id)
+            VALUES (%s, %s, %s)
+        """
+        try:
+            for frame_id in frame_ids:
+                self.cursor.execute(query, (node_id, job_id, frame_id))
+            self.conn.commit()
+            print(f"Created work threads for job {job_id} on node {node_id}")
+        except MySQLdb.Error as e:
+            print(f"Error creating work threads: {e}")
+            self.conn.rollback()
+
 
 def job_scheduler(conn):
     while True:
@@ -251,15 +317,3 @@ def job_scheduler(conn):
             # Assign frames and manage threads...
         
         time.sleep(5)  # Wait before checking again
-
-
-    # Insert frames into the frames table
-# Function to create work threads for a job
-def create_work_threads(conn, job_id, frame_ids, node_id):
-    cursor = conn.cursor()
-    for frame_id in frame_ids:
-        cursor.execute("""
-            INSERT INTO work_threads (node_id, job_id, frame_id)
-            VALUES (%s, %s, %s)
-        """, (node_id, job_id, frame_id))
-    conn.commit()

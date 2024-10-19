@@ -6,10 +6,12 @@ def generate_batch_data(job_id, frame_id, particles):
     """
     Generate a list of particle data for batch insert.
     
-    :param job_id: ID of the rendering job
-    :param frame_num: Frame number in the simulation
-    :param particles: List of particle dictionaries containing particle data
-    :return: List of tuples for batch insert
+    Args:
+        job_id (int): ID of the rendering job
+        frame_num (int): Frame number in the simulation
+        particles (list): List of particle dictionaries containing particle data
+    Returns:
+        list (tuple): List of tuples for batch insert
     """
     particle_data = []
     
@@ -53,19 +55,16 @@ if __name__ == "__main__":
                                                          wind_direction, wind_velocity)
     
     # Connect to the database and insert particle data for each frame
-    db = DB()
+    cluster = ClusterManager()
+    node_info = cluster.get_node_info()
 
-    job_id = submit_render_job(db,JobName,num_frames)
 
  # Main loop for inserting particle data frame by frame
 for frame_num in range(num_frames):
     print("Inserting Frame Data: {:.2f}%".format((frame_num / num_frames) * 100), end='\r', flush=True)
     
     # Generate batch data for the current frame
-    particle_data_batch = generate_batch_data(job_id, frame_num+1, water_particles)
     
     # Insert all particles for this frame in one batch
-    insert_particle_data_batch(conn, frame_num+1, particle_data_batch)
- 
-    conn.close()
+
 print("Inserting Frame Data: 100%  Done.")
