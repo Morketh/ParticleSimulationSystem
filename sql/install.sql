@@ -91,6 +91,48 @@ CREATE TABLE IF NOT EXISTS `render_jobs` (
 
 -- Data exporting was unselected.
 
+-- Dumping structure for view povray.view_frame_status
+-- Creating temporary table to overcome VIEW dependency errors
+CREATE TABLE `view_frame_status` (
+	`frame_id` INT(11) NOT NULL COMMENT 'Unique identifier.',
+	`frame_num` INT(11) NOT NULL COMMENT 'The specific frame number.',
+	`job_name` VARCHAR(1) NOT NULL COMMENT 'Name of the job.' COLLATE 'utf8mb4_general_ci',
+	`frame_status` ENUM('pending','in progress','rendered','error') NULL COMMENT 'Current status of the frame.' COLLATE 'utf8mb4_general_ci',
+	`started_at` TIMESTAMP NULL,
+	`completed_at` TIMESTAMP NULL,
+	`time_to_complete` BIGINT(21) NULL
+) ENGINE=MyISAM;
+
+-- Dumping structure for view povray.view_job_summary
+-- Creating temporary table to overcome VIEW dependency errors
+CREATE TABLE `view_job_summary` (
+	`job_id` INT(11) NOT NULL COMMENT 'Unique identifier.',
+	`job_name` VARCHAR(1) NOT NULL COMMENT 'Name of the job.' COLLATE 'utf8mb4_general_ci',
+	`job_status` ENUM('pending','in progress','completed') NULL COMMENT 'Current status (e.g., pending, processing, completed).' COLLATE 'utf8mb4_general_ci',
+	`total_frames` BIGINT(21) NOT NULL,
+	`rendered_frames` DECIMAL(22,0) NULL,
+	`pending_frames` DECIMAL(22,0) NULL,
+	`in_progress_frames` DECIMAL(22,0) NULL,
+	`created_at` TIMESTAMP NULL
+) ENGINE=MyISAM;
+
+-- Dumping structure for view povray.view_particle_summary
+-- Creating temporary table to overcome VIEW dependency errors
+CREATE TABLE `view_particle_summary` (
+	`particle_id` INT(11) NOT NULL,
+	`frame_id` INT(11) NOT NULL,
+	`job_name` VARCHAR(1) NOT NULL COMMENT 'Name of the job.' COLLATE 'utf8mb4_general_ci',
+	`frame_num` INT(11) NOT NULL COMMENT 'The specific frame number.',
+	`position_x` FLOAT NOT NULL,
+	`position_y` FLOAT NOT NULL,
+	`position_z` FLOAT NOT NULL,
+	`velocity_x` FLOAT NOT NULL,
+	`velocity_y` FLOAT NOT NULL,
+	`velocity_z` FLOAT NOT NULL,
+	`size` FLOAT NOT NULL,
+	`texture` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_general_ci'
+) ENGINE=MyISAM;
+
 -- Dumping structure for table povray.work_threads
 CREATE TABLE IF NOT EXISTS `work_threads` (
   `thread_id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier.',
@@ -110,6 +152,18 @@ CREATE TABLE IF NOT EXISTS `work_threads` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Manages individual work threads assigned to nodes.';
 
 -- Data exporting was unselected.
+
+-- Removing temporary table and create final VIEW structure
+DROP TABLE IF EXISTS `view_frame_status`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `view_frame_status` AS select `f`.`frame_id` AS `frame_id`,`f`.`frame_num` AS `frame_num`,`rj`.`job_name` AS `job_name`,`f`.`status` AS `frame_status`,`f`.`started_at` AS `started_at`,`f`.`completed_at` AS `completed_at`,timestampdiff(SECOND,`f`.`started_at`,`f`.`completed_at`) AS `time_to_complete` from (`frames` `f` join `render_jobs` `rj` on(`f`.`job_id` = `rj`.`job_id`));
+
+-- Removing temporary table and create final VIEW structure
+DROP TABLE IF EXISTS `view_job_summary`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `view_job_summary` AS select `rj`.`job_id` AS `job_id`,`rj`.`job_name` AS `job_name`,`rj`.`status` AS `job_status`,count(`f`.`frame_id`) AS `total_frames`,sum(case when `f`.`status` = 'rendered' then 1 else 0 end) AS `rendered_frames`,sum(case when `f`.`status` = 'pending' then 1 else 0 end) AS `pending_frames`,sum(case when `f`.`status` = 'in progress' then 1 else 0 end) AS `in_progress_frames`,`rj`.`created_at` AS `created_at` from (`render_jobs` `rj` left join `frames` `f` on(`rj`.`job_id` = `f`.`job_id`)) group by `rj`.`job_id`,`rj`.`job_name`,`rj`.`status`,`rj`.`created_at`;
+
+-- Removing temporary table and create final VIEW structure
+DROP TABLE IF EXISTS `view_particle_summary`;
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `view_particle_summary` AS select `p`.`particle_id` AS `particle_id`,`p`.`frame_id` AS `frame_id`,`rj`.`job_name` AS `job_name`,`f`.`frame_num` AS `frame_num`,`p`.`position_x` AS `position_x`,`p`.`position_y` AS `position_y`,`p`.`position_z` AS `position_z`,`p`.`velocity_x` AS `velocity_x`,`p`.`velocity_y` AS `velocity_y`,`p`.`velocity_z` AS `velocity_z`,`p`.`size` AS `size`,`p`.`texture` AS `texture` from ((`particles` `p` join `frames` `f` on(`p`.`frame_id` = `f`.`frame_id`)) join `render_jobs` `rj` on(`p`.`job_id` = `rj`.`job_id`));
 
 /*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
 /*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;
