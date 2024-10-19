@@ -6,13 +6,53 @@ import psutil
 import sys
 
 class ClusterManager:
-    def __init__(self, h, u, p, db):
+    """
+    A class to manage the connection and operations of a database cluster
+    for rendering jobs, particles, and nodes in a distributed system.
+
+    This class provides methods to establish a connection to a MySQL database,
+    manage jobs, frames, particles, and monitor nodes within a Beowulf cluster.
+    The connection details are provided during initialization, and the class
+    manages the database cursor and connection for executing SQL queries.
+    
+    Attributes:
+        conn (MySQLdb.Connection): The MySQL database connection object (None until connected).
+        cursor (MySQLdb.Cursor): The cursor for executing SQL queries (None until connected).
+        host (str): The database host (IP address or domain) to connect to.
+        port (int): The port number used for connecting to the database.
+        user (str): The username for authenticating with the database.
+        password (str): The password for the database connection (using the port value for demo purposes).
+        database (str): The name of the database to use.
+
+    Methods:
+        __init__(self, host, user, port, db):
+            Initializes the ClusterManager instance with database connection parameters.
+    """
+    def __init__(self, host, user, port, db):
+        """
+        Initializes the ClusterManager class with the connection parameters for the MySQL database.
+
+        Args:
+            host (str): The hostname or IP address of the MySQL server.
+            user (str): The username used to authenticate with the MySQL database.
+            port (int): The port number for the MySQL connection (default is typically 3306).
+            db (str): The name of the database to connect to.
+
+        Attributes:
+            conn (MySQLdb.Connection): Initially set to None. The connection to the MySQL database will be established later.
+            cursor (MySQLdb.Cursor): Initially set to None. The cursor for executing SQL queries will be created after connecting.
+            host (str): Stores the database host address.
+            port (int): Stores the port number for the MySQL connection.
+            user (str): Stores the username for MySQL authentication.
+            password (str): For demo purposes, stores the port number (should be the actual password in real use).
+            database (str): Stores the name of the database to connect to.
+        """
         self.conn = None
         self.cursor = None
-        self.host=h
-        self.port=p
-        self.user=u
-        self.password=p
+        self.host=host
+        self.port=port
+        self.user=user
+        self.password=port
         self.database=db
 
 # Function to connect to the MySQL database
@@ -135,7 +175,21 @@ class ClusterManager:
             return None
         
     def get_node_info(self):
-        """Fetch the current machine's IP address, CPU cores, and memory (GB)."""
+        """
+        Fetches the current machine's system information including the IP address,
+        number of CPU cores, and total memory in GB.
+
+        This method gathers the following information:
+        1. **IP Address**: Obtains the machine's local IP address using the `socket` library.
+        2. **CPU Cores**: Retrieves the number of logical CPU cores using the `psutil` library.
+        3. **Memory**: Fetches the total memory (RAM) in gigabytes using `psutil`.
+
+        Returns:
+            tuple: A tuple containing the following elements:
+                - ip_address (str): The IP address of the current machine.
+                - cpu_cores (int): The number of logical CPU cores.
+                - memory_gb (float): The total memory in gigabytes, rounded to two decimal places.
+        """
         # Get IP address
         hostname = socket.gethostname()
         ip_address = socket.gethostbyname(hostname)
@@ -167,7 +221,7 @@ class ClusterManager:
             self.cursor.close()
             self.conn.close()
     
-    def get_node_info(self):
+    def get_all_node_info(self):
         """Fetch ip_address, cpu_cores, and memory_gb for all nodes."""
         query = "SELECT ip_address, cpu_cores, memory_gb FROM nodes"
         try:
