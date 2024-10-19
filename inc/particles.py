@@ -6,9 +6,17 @@ class ParticleGenerator:
     A class for generating different types of particle simulations, including conical fountain sprays
     and fire particles.
 
+    Attributes:
+        particles (list): A list to store generated particle dictionaries.
+            - key: 'position' [x,y,z] position of particle
+            - key: 'velocity' [x,y,z] velocity of particle
+            - key: 'size' (float) size of particle
+            - key: 'texture' (str) texture of particle. (each method has a default)
+
     Methods:
     - generate_conical_fountain: Generates particles in a conical fountain spray pattern.
     - generate_fire_particles: Generates particles simulating fire in a brazier or similar setting.
+    - clear_particles: Clears the particle list.
     """
 
     def __init__(self):
@@ -38,9 +46,6 @@ class ParticleGenerator:
             wind_direction (list of float): A [x, y, z] vector representing the wind direction.
             wind_velocity (float): The velocity of the wind affecting the particles.
             texture (str, optional): The texture or material to apply to the particles. Defaults to "WaterTexture".
-
-        Returns:
-            list: A list of particle dictionaries, each containing 'position', 'velocity', 'size', and 'texture'.
         """
         for i in range(num_particles):
             height = random.uniform(0, cone_height)
@@ -84,9 +89,6 @@ class ParticleGenerator:
             base_position (list of float): The [x, y, z] coordinates representing the center of the fire.
             num_particles (int): The number of fire particles to generate.
             texture (str, optional): The texture or material to apply to the particles. Defaults to "FireTexture".
-
-        Returns:
-            list: A list of particle dictionaries, each containing 'position', 'velocity', 'size', and 'texture'.
         """
         for i in range(num_particles):
             # Randomly generate initial position near the base of the brazier
