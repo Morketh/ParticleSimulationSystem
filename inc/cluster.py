@@ -198,7 +198,7 @@ class ClusterManager:
 
     def get_available_frames(self, job_id):
         """Get the next available frame for rendering (i.e., not started)."""
-        query = "SELECT frame_id FROM frames WHERE job_id = %s AND status = 'not_started' LIMIT 1"
+        query = "SELECT frame_id FROM frames WHERE job_id = %s AND status = 'pending' LIMIT 1"
         try:
             self.cursor.execute(query, (job_id,))
             frame = self.cursor.fetchone()
