@@ -1,0 +1,12 @@
+File: C:\Users\Admiral\Documents\POV-Ray\v3.7\include\Create_Stones.inc  Line:
+ 51
+Parse Warning: New instance of assumed_gamma ignored
+File: C:\Users\Admiral\Documents\POV-Ray\v3.7\include\Create_Stones.inc  Line:
+ 192
+Parse Warning: Suspicious expression after rgbt.
+File: C:\Users\Admiral\Documents\POV-Ray\v3.7\include\Create_Stones.inc  Line:
+ 194
+Parse Warning: Suspicious expression after rgbt.
+File: C:\Users\Admiral\Documents\POV-Ray\v3.7\include\Create_Stones.inc  Line:
+ 221
+Parse Warning: Suspicious expression after rgbt.

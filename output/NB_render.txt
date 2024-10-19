@@ -1,0 +1,30 @@
+Parser Options
+  Input file: NewBegining.pov (compatible to version 3.70)
+  Remove bounds........On 
+  Split unions.........Off
+  Library paths:
+    Output_File_Name=c:\Users\Admiral\Documents\POV-Ray\CI Projects\
+    C:\Users\Admiral\Documents\POV-Ray\v3.7\include\
+    C:\Users\Admiral\Documents\POV-Ray\v3.7\include
+    C:\WINDOWS\Fonts
+  Clock value:    0.000  (Animation off)
+Image Output Options
+  Image resolution.....1920 by 1080 (rows 1 to 1080, columns 1 to 1920).
+  Output file..........output\NewBegining.png, 32 bpp with alpha PNG
+  Dithering............Off
+  Graphic display......On  (gamma: sRGB)
+  Mosaic preview.......On  (pixel sizes 64 to 1)
+  Continued trace......Off
+Information Output Options
+  All Streams to console..........On 
+  Debug Stream to console.........On 
+  Fatal Stream to console.........On 
+  Render Stream to console........On 
+  Statistics Stream to console....On 
+  Warning Stream to console.......On 
+----------------------------------------------------------------------------
+Render Options
+  Quality:  9
+  Bounding boxes.......On   Bounding threshold: 3
+  Antialiasing.........On  (Method 2, Threshold 0.100, Depth 5, Jitter Off,
+ Gamma 2.50)

@@ -1,0 +1,4 @@
+
+Particle system "fountain" is called.
+ - Number of currently active particles: 1441
+ - Particle system finished.
