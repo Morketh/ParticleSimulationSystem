@@ -56,6 +56,12 @@ class ClusterManager:
         self.password=passwrd
         self.database=db
 
+    def __return_dict(self):
+           # Get column names from the cursor
+           columns = [col[0] for col in self.cursor.description]
+           # Fetch all rows and convert each row into a dictionary
+           return [dict(zip(columns, row)) for row in self.cursor.fetchall()]
+        
 # Function to connect to the MySQL database
     def connect(self):
         """
@@ -325,11 +331,7 @@ class ClusterManager:
             
             # Execute the query
             self.cursor.execute(query)
-            
-            # Fetch one job with status 'pending'
-            pending_job = self.cursor.fetchone()
-
-            return pending_job  # Returns a dictionary of the job details
+            return self.__return_dict()  # Returns a dictionary of the job details
 
         except MySQLdb.Error as e:
             print(f"Error: {e}")
