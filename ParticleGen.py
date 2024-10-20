@@ -43,9 +43,12 @@ if __name__ == "__main__":
     waterParticles.generate_conical_fountain(num_particles, apex_position, cone_height, cone_angle, base_radius, wind_direction, wind_velocity)
 
 # Main loop for inserting particle data frame by frame
-for frame_num in range(num_frames):
-    print("Inserting Frame Data: {:.2f}%".format((frame_num / num_frames) * 100), end='\r', flush=True)
-    waterParticles.plot_particles_at_frame(frame_num,frame_rate=fps)
-    cluster.insert_particle_data(1,frame_num,waterParticles)
-    
-print("Inserting Frame Data: 100%  Done.")
+    cluster.connect()
+    jid = cluster.create_job(JobName,num_frames,res_x,res_y,Quality,AntiAlias,10,0.1,2)
+    cluster.insert_frames(jid,num_frames)
+    for frame_num in range(num_frames):
+        print("Inserting Frame Data: {:.2f}%".format((frame_num / num_frames) * 100), end='\r', flush=True)
+        waterParticles.plot_particles_at_frame(frame_num,frame_rate=fps)
+        cluster.insert_particle_data(jid,frame_num,waterParticles.particles)
+
+    print("Inserting Frame Data: 100%  Done.")

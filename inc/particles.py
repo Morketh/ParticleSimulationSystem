@@ -19,11 +19,12 @@ class ParticleGenerator:
     - clear_particles: Clears the particle list.
     """
 
-    def __init__(self):
+    def __init__(self, gravity=9.81):
         """
         Initializes the ParticleGenerator class with an empty particle list.
         """
         self.particles = []
+        self.gravity = gravity
     
     def clear_particles(self):
         """
@@ -75,6 +76,7 @@ class ParticleGenerator:
             size = random.uniform(0.05, 0.15)
 
             self.particles.append({
+                'particle_id': i+1,
                 'position': [x, y, z],
                 'velocity': [velocity_x, velocity_y, velocity_z],
                 'size': size,
@@ -107,6 +109,7 @@ class ParticleGenerator:
             size = random.uniform(0.05, 0.15)
 
             self.particles.append({
+                'particle_id': i+1,
                 'position': position,
                 'velocity': velocity,
                 'size': size,

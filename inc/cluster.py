@@ -51,7 +51,7 @@ class ClusterManager:
         self.conn = None
         self.cursor = None
         self.host=host
-        self.port=port
+        self.port=int(port)
         self.user=user
         self.password=passwrd
         self.database=db
@@ -80,21 +80,34 @@ class ClusterManager:
 
     def insert_particle_data(self, job_id, frame_id, particle_data):
         """
-        Inserts multiple frames into the frames table for a given job.
+        Inserts all particles for a given frame into the particles table.
 
         Args:
             job_id (int): The ID of the job.
-            num_frames (int): The number of frames to insert.
+            frame_id (int): the frame number.
+            particle_job (list): list of dict values for particles
         """
         query = """
-            INSERT INTO particles (frame_id, job_id, position_x, position_y, position_z,
+            INSERT INTO particles (particle_id, frame_id, job_id, position_x, position_y, position_z,
                                   velocity_x, velocity_y, velocity_z, size, texture)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         try:
-            self.cursor.executemany(query, particle_data)
-            self.conn.commit()
-            print(f"Inserted {self.cursor.rowcount} particles for frame {frame_id}")
+            for particle in particle_data:
+                self.cursor.execute(query, (
+                    particle['particle_id'],   # Extract individual values from the particle dict
+                    frame_id,
+                    job_id,
+                    particle['position'][0],   # position_x
+                    particle['position'][1],   # position_y
+                    particle['position'][2],   # position_z
+                    particle['velocity'][0],   # velocity_x
+                    particle['velocity'][1],   # velocity_y
+                    particle['velocity'][2],   # velocity_z
+                    particle['size'],
+                    particle['texture']
+                ))
+                self.conn.commit()
         except MySQLdb.Error as e:
             print(f"Error inserting particle data: {e}")
             self.conn.rollback()
@@ -127,7 +140,7 @@ class ClusterManager:
             num_frames (int): The number of frames to insert.
         """
         query = """
-                INSERT INTO frames (job_id, frame_num, status)
+                INSERT INTO frames (job_id, frame_id, status)
                 VALUES (%s, %s, %s)
             """
         try:
@@ -176,17 +189,15 @@ class ClusterManager:
             antialias_depth (int): The depth of antialiasing.
             antialias_threshold (float): The antialiasing threshold.
             sampling_method (int): The method of sampling for antialiasing.
+        Return:
+            job_id (int): job ID from SQL server or None if failed.
         """
-        query = """"
-        INSERT INTO render_jobs (job_name, status, created_at,
-                   total_frames, width, height, quality,
-                   antialias, antialias_depth,
-                   antialias_threshold, sampling_method)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, 
+        query = """
+            INSERT INTO render_jobs (job_name, total_frames, width, height, quality, antialias, antialias_depth, antialias_threshold, sampling_method)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """ 
         try:
-            self.cursor.execute(query, (job_name, 'pending', datetime.now(),
-                num_frames, res_x, res_y, quality, antialias,
+            self.cursor.execute(query, (job_name, num_frames, res_x, res_y, quality, antialias,
                 antialias_depth, antialias_threshold, sampling_method))
             self.conn.commit()
             job_id = self.cursor.lastrowid
