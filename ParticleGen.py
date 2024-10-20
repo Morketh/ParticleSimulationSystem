@@ -44,6 +44,7 @@ if __name__ == "__main__":
 
 # Main loop for inserting particle data frame by frame
     cluster.connect()
+    cluster.insert_node_info()
     jid = cluster.create_job(JobName,num_frames,res_x,res_y,Quality,AntiAlias,10,0.1,2)
     cluster.insert_frames(jid,num_frames)
     for frame_num in range(num_frames):

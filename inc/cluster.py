@@ -67,6 +67,7 @@ class ClusterManager:
             print("Connection established")
         except MySQLdb.Error as e:
             print("Error connecting to database: {}".format(e))
+            exit(-1)
     
     def disconnect(self):
         """
@@ -259,18 +260,18 @@ class ClusterManager:
         
         return ip_address, cpu_cores, memory_gb
 
-    def insert_node_info(self):
+    def insert_node_info(self, status='active',role='render'):
         """Insert the node's info into the database."""
         ip_address, cpu_cores, memory_gb = self.get_node_info()
         query = """
-        INSERT INTO nodes (ip_address, cpu_cores, memory_gb, status, role)
-        VALUES (%s, %s, %s, %s, %s)
-        """
+            INSERT INTO nodes (ip_address, cpu_cores, memory_gb, status, role)
+            VALUES (%s, %s, %s, %s, %s)
+            """
         try:
             # Assuming this is an active render node by default
-            self.cursor.execute(query, (ip_address, cpu_cores, memory_gb, 'active', 'render'))
+            self.cursor.execute(query, (ip_address, cpu_cores, memory_gb, status, role))
             self.conn.commit()
-            print(f"Inserted node with IP: {ip_address}, CPU: {cpu_cores} cores, Memory: {memory_gb} GB")
+            print(f"Registered node with IP: {ip_address}, CPU: {cpu_cores} cores, Memory: {memory_gb} GB")
         except MySQLdb.Error as e:
             print(f"Error inserting node info: {e}")
         finally:
@@ -311,7 +312,6 @@ class ClusterManager:
         except MySQLdb.Error as e:
             print(f"Error creating work threads: {e}")
             self.conn.rollback()
-
 
 def job_scheduler(conn):
     while True:

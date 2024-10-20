@@ -21,8 +21,8 @@ USE `povray`;
 
 -- Dumping structure for table povray.frames
 CREATE TABLE IF NOT EXISTS `frames` (
-  `frame_id` int(11) NOT NULL COMMENT 'Unique identifier.',
   `job_id` int(11) NOT NULL COMMENT 'Links to the corresponding job.',
+  `frame_id` int(11) NOT NULL COMMENT 'Unique identifier.',
   `status` enum('pending','in progress','rendered','error') DEFAULT 'pending' COMMENT 'Current status of the frame.',
   `started_at` timestamp NULL DEFAULT NULL,
   `completed_at` timestamp NULL DEFAULT NULL,
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS `nodes` (
 
 -- Dumping structure for table povray.particles
 CREATE TABLE IF NOT EXISTS `particles` (
-  `particle_id` int(11) NOT NULL AUTO_INCREMENT,
+  `particle_id` int(11) NOT NULL,
   `frame_id` int(11) NOT NULL,
   `job_id` int(11) NOT NULL,
   `position_x` float NOT NULL,
@@ -62,8 +62,7 @@ CREATE TABLE IF NOT EXISTS `particles` (
   `velocity_z` float NOT NULL,
   `size` float NOT NULL,
   `texture` varchar(255) NOT NULL,
-  PRIMARY KEY (`particle_id`),
-  UNIQUE KEY `unique_position_in_frame` (`position_x`,`position_y`,`position_z`,`frame_id`),
+  UNIQUE KEY `unique_position_in_frame` (`position_x`,`position_y`,`position_z`,`frame_id`,`particle_id`,`job_id`) USING BTREE,
   KEY `frame_id` (`frame_id`),
   KEY `job_id` (`job_id`),
   CONSTRAINT `job_id` FOREIGN KEY (`job_id`) REFERENCES `render_jobs` (`job_id`) ON DELETE CASCADE
@@ -76,8 +75,6 @@ CREATE TABLE IF NOT EXISTS `render_jobs` (
   `job_id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier.',
   `job_name` varchar(255) NOT NULL COMMENT 'Name of the job.',
   `total_frames` int(11) NOT NULL,
-  `created_at` timestamp NULL DEFAULT current_timestamp(),
-  `status` enum('pending','in progress','completed') DEFAULT 'pending' COMMENT 'Current status (e.g., pending, processing, completed).',
   `width` int(10) unsigned NOT NULL DEFAULT 1920,
   `height` int(10) unsigned NOT NULL DEFAULT 1080,
   `quality` int(10) unsigned NOT NULL DEFAULT 11,
@@ -85,9 +82,11 @@ CREATE TABLE IF NOT EXISTS `render_jobs` (
   `antialias_depth` int(10) unsigned NOT NULL DEFAULT 5,
   `antialias_threshold` float unsigned NOT NULL DEFAULT 0.1,
   `sampling_method` int(11) DEFAULT 2,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `status` enum('pending','in progress','completed') DEFAULT 'pending' COMMENT 'Current status (e.g., pending, processing, completed).',
   PRIMARY KEY (`job_id`),
   KEY `status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Keeps track of rendering jobs';
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Keeps track of rendering jobs';
 
 -- Data exporting was unselected.
 
@@ -112,7 +111,7 @@ CREATE TABLE `view_job_summary` (
 	`rendered_frames` DECIMAL(22,0) NULL,
 	`pending_frames` DECIMAL(22,0) NULL,
 	`in_progress_frames` DECIMAL(22,0) NULL,
-	`created_at` TIMESTAMP NULL
+	`created_at` TIMESTAMP NOT NULL
 ) ENGINE=MyISAM;
 
 -- Dumping structure for view povray.view_particle_summary
