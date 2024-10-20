@@ -21,13 +21,12 @@ USE `povray`;
 
 -- Dumping structure for table povray.frames
 CREATE TABLE IF NOT EXISTS `frames` (
-  `frame_id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier.',
+  `frame_id` int(11) NOT NULL COMMENT 'Unique identifier.',
   `job_id` int(11) NOT NULL COMMENT 'Links to the corresponding job.',
-  `frame_num` int(11) NOT NULL COMMENT 'The specific frame number.',
   `status` enum('pending','in progress','rendered','error') DEFAULT 'pending' COMMENT 'Current status of the frame.',
   `started_at` timestamp NULL DEFAULT NULL,
   `completed_at` timestamp NULL DEFAULT NULL,
-  PRIMARY KEY (`frame_id`),
+  UNIQUE KEY `frame_id_job_id` (`frame_id`,`job_id`),
   KEY `job_id` (`job_id`),
   CONSTRAINT `frames_ibfk_1` FOREIGN KEY (`job_id`) REFERENCES `render_jobs` (`job_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Contains information about frames in each render job.';
@@ -64,6 +63,7 @@ CREATE TABLE IF NOT EXISTS `particles` (
   `size` float NOT NULL,
   `texture` varchar(255) NOT NULL,
   PRIMARY KEY (`particle_id`),
+  UNIQUE KEY `unique_position_in_frame` (`position_x`,`position_y`,`position_z`,`frame_id`),
   KEY `frame_id` (`frame_id`),
   KEY `job_id` (`job_id`),
   CONSTRAINT `job_id` FOREIGN KEY (`job_id`) REFERENCES `render_jobs` (`job_id`) ON DELETE CASCADE
@@ -95,7 +95,6 @@ CREATE TABLE IF NOT EXISTS `render_jobs` (
 -- Creating temporary table to overcome VIEW dependency errors
 CREATE TABLE `view_frame_status` (
 	`frame_id` INT(11) NOT NULL COMMENT 'Unique identifier.',
-	`frame_num` INT(11) NOT NULL COMMENT 'The specific frame number.',
 	`job_name` VARCHAR(1) NOT NULL COMMENT 'Name of the job.' COLLATE 'utf8mb4_general_ci',
 	`frame_status` ENUM('pending','in progress','rendered','error') NULL COMMENT 'Current status of the frame.' COLLATE 'utf8mb4_general_ci',
 	`started_at` TIMESTAMP NULL,
@@ -122,7 +121,6 @@ CREATE TABLE `view_particle_summary` (
 	`particle_id` INT(11) NOT NULL,
 	`frame_id` INT(11) NOT NULL,
 	`job_name` VARCHAR(1) NOT NULL COMMENT 'Name of the job.' COLLATE 'utf8mb4_general_ci',
-	`frame_num` INT(11) NOT NULL COMMENT 'The specific frame number.',
 	`position_x` FLOAT NOT NULL,
 	`position_y` FLOAT NOT NULL,
 	`position_z` FLOAT NOT NULL,
@@ -155,7 +153,7 @@ CREATE TABLE IF NOT EXISTS `work_threads` (
 
 -- Removing temporary table and create final VIEW structure
 DROP TABLE IF EXISTS `view_frame_status`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `view_frame_status` AS select `f`.`frame_id` AS `frame_id`,`f`.`frame_num` AS `frame_num`,`rj`.`job_name` AS `job_name`,`f`.`status` AS `frame_status`,`f`.`started_at` AS `started_at`,`f`.`completed_at` AS `completed_at`,timestampdiff(SECOND,`f`.`started_at`,`f`.`completed_at`) AS `time_to_complete` from (`frames` `f` join `render_jobs` `rj` on(`f`.`job_id` = `rj`.`job_id`));
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `view_frame_status` AS select `f`.`frame_id` AS `frame_id`,`rj`.`job_name` AS `job_name`,`f`.`status` AS `frame_status`,`f`.`started_at` AS `started_at`,`f`.`completed_at` AS `completed_at`,timestampdiff(SECOND,`f`.`started_at`,`f`.`completed_at`) AS `time_to_complete` from (`frames` `f` join `render_jobs` `rj` on(`f`.`job_id` = `rj`.`job_id`));
 
 -- Removing temporary table and create final VIEW structure
 DROP TABLE IF EXISTS `view_job_summary`;
@@ -163,7 +161,7 @@ CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `view_job_summary` AS selec
 
 -- Removing temporary table and create final VIEW structure
 DROP TABLE IF EXISTS `view_particle_summary`;
-CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `view_particle_summary` AS select `p`.`particle_id` AS `particle_id`,`p`.`frame_id` AS `frame_id`,`rj`.`job_name` AS `job_name`,`f`.`frame_num` AS `frame_num`,`p`.`position_x` AS `position_x`,`p`.`position_y` AS `position_y`,`p`.`position_z` AS `position_z`,`p`.`velocity_x` AS `velocity_x`,`p`.`velocity_y` AS `velocity_y`,`p`.`velocity_z` AS `velocity_z`,`p`.`size` AS `size`,`p`.`texture` AS `texture` from ((`particles` `p` join `frames` `f` on(`p`.`frame_id` = `f`.`frame_id`)) join `render_jobs` `rj` on(`p`.`job_id` = `rj`.`job_id`));
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `view_particle_summary` AS select `p`.`particle_id` AS `particle_id`,`p`.`frame_id` AS `frame_id`,`rj`.`job_name` AS `job_name`,`p`.`position_x` AS `position_x`,`p`.`position_y` AS `position_y`,`p`.`position_z` AS `position_z`,`p`.`velocity_x` AS `velocity_x`,`p`.`velocity_y` AS `velocity_y`,`p`.`velocity_z` AS `velocity_z`,`p`.`size` AS `size`,`p`.`texture` AS `texture` from ((`particles` `p` join `frames` `f` on(`p`.`frame_id` = `f`.`frame_id`)) join `render_jobs` `rj` on(`p`.`job_id` = `rj`.`job_id`));
 
 /*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
 /*!40101 SET SQL_MODE=IFNULL(@OLD_SQL_MODE, '') */;

@@ -112,3 +112,44 @@ class ParticleGenerator:
                 'size': size,
                 'texture': texture
             })
+
+    def plot_particles_at_frame(self, frame_number, frame_rate):
+        """
+        Plots the positions of particles at a given frame, considering gravity.
+        
+        Args:
+            frame_number (int): The frame number (F) to calculate particle positions.
+            frame_rate (float): The frame rate of the simulation in frames per second (fps).
+        
+        Returns:
+            list: A list of updated particle positions at frame F.
+        """
+        # Calculate the time corresponding to the frame
+        time_elapsed = frame_number / frame_rate
+
+        updated_particles = []
+
+        for particle in self.particles:
+            initial_position = np.array(particle['position'])
+            velocity = np.array(particle['velocity'])
+
+            # Update the x, z positions with simple linear motion
+            new_x = initial_position[0] + velocity[0] * time_elapsed
+            new_z = initial_position[2] + velocity[2] * time_elapsed
+
+            # Update the y position considering gravity
+            initial_y = initial_position[1]
+            velocity_y = velocity[1]
+            new_y = initial_y + velocity_y * time_elapsed - 0.5 * self.gravity * (time_elapsed ** 2)
+
+            # Prevent particles from falling below ground level (y >= 0)
+            new_y = max(new_y, 0)
+
+            updated_particles.append({
+                'particle_id': particle['particle_id'],
+                'position': [new_x, new_y, new_z],
+                'size': particle['size'],
+                'texture': particle['texture']
+            })
+
+        return updated_particles

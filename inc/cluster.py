@@ -28,7 +28,7 @@ class ClusterManager:
         __init__(self, host, user, port, db):
             Initializes the ClusterManager instance with database connection parameters.
     """
-    def __init__(self, host, user, port, db):
+    def __init__(self, host, user, port, db, passwrd):
         """
         Initializes the ClusterManager class with the connection parameters for the MySQL database.
 
@@ -37,6 +37,7 @@ class ClusterManager:
             user (str): The username used to authenticate with the MySQL database.
             port (int): The port number for the MySQL connection (default is typically 3306).
             db (str): The name of the database to connect to.
+            passwrd (str): The password for the database user
 
         Attributes:
             conn (MySQLdb.Connection): Initially set to None. The connection to the MySQL database will be established later.
@@ -52,7 +53,7 @@ class ClusterManager:
         self.host=host
         self.port=port
         self.user=user
-        self.password=port
+        self.password=passwrd
         self.database=db
 
 # Function to connect to the MySQL database

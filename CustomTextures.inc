@@ -27,9 +27,6 @@ texture {
         specular 0.9  // Sharp highlights
         roughness 0.001  // Smooth surface for a shiny look
     }
-    interior {
-        ior 1.33  // Index of refraction for water
-    }
 }
 
 
@@ -111,38 +108,38 @@ texture {
     }
 }
 
-#declare MetalInlay = texture {
-    // Top layer: metallic inlay
-    pigment {
-        checker  // Checker pattern for a tech-like look
-        color_map {
-            [0.0 color rgb <0.6, 0.6, 0.6>]  // Shiny metal
-            [1.0 color rgb <0.2, 0.2, 0.2>]  // Dark metal grid
-        }
-        scale 0.2
-    }
-    finish {
-        ambient 0.3
-        diffuse 0.4
-        specular 1.0  // High reflectivity for the metal
-        metallic  // Metallic finish
-        reflection 0.6  // Reflective, but not a mirror
-    }
-    normal {
-        bumps 0.2  // Subtle texture on the metal surface
-        scale 0.1
-    }
-}
-
-#declare SciFiStoneMetal = texture {
-    // Combine both textures
-    texture_map {
-        [0.0 SciFiTexture]
-        [0.4 MetalInlay]
-    }
-    scale <0.5, 0.5, 0.5>  // Overall scale for both textures
-}
-
+//#declare MetalInlay = texture {
+//    // Top layer: metallic inlay
+//    pigment {
+//        checker  // Checker pattern for a tech-like look
+//        color_map {
+//            [0.0 color rgb <0.6, 0.6, 0.6>]  // Shiny metal
+//            [1.0 color rgb <0.2, 0.2, 0.2>]  // Dark metal grid
+//        }
+//        scale 0.2
+//    }
+//    finish {
+//        ambient 0.3
+//        diffuse 0.4
+//        specular 1.0  // High reflectivity for the metal
+//        metallic  // Metallic finish
+//        reflection 0.6  // Reflective, but not a mirror
+//    }
+//    normal {
+//        bumps 0.2  // Subtle texture on the metal surface
+//        scale 0.1
+//    }
+//}
+//
+//#declare SciFiStoneMetal = texture {
+//    // Combine both textures
+//    texture_map {
+//        [0.0 SciFiTexture]
+//        [0.4 MetalInlay]
+//    }
+//    scale <0.5, 0.5, 0.5>  // Overall scale for both textures
+//}
+//
 //def GetCITexture():
 //    """Returns the CI Texture
 //    Green and Black Marble with touches of sky blue"""

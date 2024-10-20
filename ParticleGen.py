@@ -1,33 +1,18 @@
 import numpy as np
-from inc import particles
-from inc.cluster import *
-
-def generate_batch_data(job_id, frame_id, particles):
-    """
-    Generate a list of particle data for batch insert.
-    
-    Args:
-        job_id (int): ID of the rendering job
-        frame_num (int): Frame number in the simulation
-        particles (list): List of particle dictionaries containing particle data
-    Returns:
-        list (tuple): List of tuples for batch insert
-    """
-    particle_data = []
-    
-    for particle_id, particle in enumerate(particles):
-        # Append each particle's data as a tuple for batch insertion
-        particle_data.append((
-            job_id, frame_id,
-            particle['position'][0], particle['position'][1], particle['position'][2],
-            particle['velocity'][0], particle['velocity'][1], particle['velocity'][2],
-            particle['size'], particle['texture']
-        ))
-    
-    return particle_data
+from inc.particles import ParticleGenerator
+from inc.cluster import ClusterManager
+from dotenv import load_dotenv
+import os
 
 # Update the main simulation part to use the new function
 if __name__ == "__main__":
+    # LOAD settings from the .env file
+    load_dotenv()
+    host = os.getenv('HOST')
+    user = os.getenv('USER')
+    passwrd = os.getenv('PASSWORD')
+    port = os.getenv('PORT')
+    db = os.getenv('DATABASE')
 
     # Global Settings for Render Job (should be pulled from the commandline or job que)
     res_x = 1920
@@ -41,30 +26,26 @@ if __name__ == "__main__":
     JobName = "Fountain_{}x{}_Q{}_aa{}_fr{}".format(res_x,res_y,Quality,AntiAlias,fps)
 
     # Scene Settings
-    apex_position = [0, 0, 0]  # Starting point of the fountain
-    cone_height = 10  # Height of the cone
+    apex_position = [0, 1.5, 14]  # Starting point of the fountain
+    cone_height = 2  # Height of the cone
     cone_angle = np.pi / 6  # 30 degrees cone angle
-    base_radius = 5  # Base radius of the cone
+    base_radius = 1.75  # Base radius of the cone
 
     # Define wind direction (as a unit vector) and velocity
     wind_direction = [1, 0.5, 0]  # Wind blowing along the x-axis
     wind_velocity = 2.0  # Wind speed
 
-    water_particles = particles.generate_conical_fountain(num_particles, apex_position,
-                                                         cone_height, cone_angle, base_radius,
-                                                         wind_direction, wind_velocity)
-    
-    # Connect to the database and insert particle data for each frame
-    cluster = ClusterManager()
+    cluster = ClusterManager(host=host, user=user, port=port, passwrd=passwrd, db=db)
     node_info = cluster.get_node_info()
 
+    waterParticles = ParticleGenerator()
 
- # Main loop for inserting particle data frame by frame
+    waterParticles.generate_conical_fountain(num_particles, apex_position, cone_height, cone_angle, base_radius, wind_direction, wind_velocity)
+
+# Main loop for inserting particle data frame by frame
 for frame_num in range(num_frames):
     print("Inserting Frame Data: {:.2f}%".format((frame_num / num_frames) * 100), end='\r', flush=True)
+    waterParticles.plot_particles_at_frame(frame_num,frame_rate=fps)
+    cluster.insert_particle_data(1,frame_num,waterParticles)
     
-    # Generate batch data for the current frame
-    
-    # Insert all particles for this frame in one batch
-
 print("Inserting Frame Data: 100%  Done.")

@@ -49,13 +49,13 @@ global_settings{ assumed_gamma 1.0 }
 
 // Object definitions
 
-#declare Brazier = union {
-    cylinder { <0, 0, 0>, <0, 1, 0>, 0.5 texture { StoneTexture } }  // Brazier body
-    sphere { <0, 1, 0>, 0.55 texture { MetalTexture } }  // Brazier bowl
-    cylinder { <0.4, 0, 0>, <0.4, 1, 0>, 0.05 texture { MetalTexture } }  // Supporting leg
-    cylinder { <-0.4, 0, 0>, <-0.4, 1, 0>, 0.05 texture { MetalTexture } }
-    translate <X_Position, 0, Z_Position>  // Position the brazier in the scene
-}
+//#declare Brazier = union {
+//    cylinder { <0, 0, 0>, <0, 1, 0>, 0.5 texture { StoneTexture } }  // Brazier body
+//    sphere { <0, 1, 0>, 0.55 texture { MetalTexture } }  // Brazier bowl
+//    cylinder { <0.4, 0, 0>, <0.4, 1, 0>, 0.05 texture { MetalTexture } }  // Supporting leg
+//    cylinder { <-0.4, 0, 0>, <-0.4, 1, 0>, 0.05 texture { MetalTexture } }
+//    translate <X_Position, 0, Z_Position>  // Position the brazier in the scene
+//}
 
 #declare Pilliar =
 union {
@@ -135,7 +135,7 @@ plane{ <0,1,0>, 0
 //--------------------------------------------------------------------------
 //---------------------------- objects in scene ----------------------------
 //--------------------------------------------------------------------------
-
+//sphere { <0, FountainCH, CoumnZ_Offset-10>, 2 texture { Jade } }
 object { Fountain translate <0,0,CoumnZ_Offset-10> texture { Blood_Marble }}
 object { Moon }
 object { Pilliar translate <-(ColumnSpacing/2), 0, CoumnZ_Offset> texture { LimeStoneTexture } }
