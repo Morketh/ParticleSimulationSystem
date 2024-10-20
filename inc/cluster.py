@@ -175,7 +175,7 @@ class ClusterManager:
             print(f"Error updating frame status: {e}")
             self.conn.rollback()
 
-    def create_job(self, job_name, num_frames, res_x, res_y, quality, antialias,
+    def create_job(self, job_name, num_frames, res_x, res_y, fps, quality, antialias,
                 antialias_depth, antialias_threshold, sampling_method):
         """
         Creates a new render job in the render_jobs table.
@@ -194,11 +194,11 @@ class ClusterManager:
             job_id (int): job ID from SQL server or None if failed.
         """
         query = """
-            INSERT INTO render_jobs (job_name, total_frames, width, height, quality, antialias, antialias_depth, antialias_threshold, sampling_method)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO render_jobs (job_name, total_frames, width, height, fps, quality, antialias, antialias_depth, antialias_threshold, sampling_method)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """ 
         try:
-            self.cursor.execute(query, (job_name, num_frames, res_x, res_y, quality, antialias,
+            self.cursor.execute(query, (job_name, num_frames, res_x, res_y, fps, quality, antialias,
                 antialias_depth, antialias_threshold, sampling_method))
             self.conn.commit()
             job_id = self.cursor.lastrowid
@@ -209,8 +209,8 @@ class ClusterManager:
             self.conn.rollback()
             return None
 
-    def get_available_frames(self, job_id):
-        """Get the next available frame for rendering (i.e., not started)."""
+    def get_next_frame(self, job_id):
+        """Get the next available frame for rendering (i.e., pending)."""
         query = "SELECT frame_id FROM frames WHERE job_id = %s AND status = 'pending' LIMIT 1"
         try:
             self.cursor.execute(query, (job_id,))
@@ -313,6 +313,28 @@ class ClusterManager:
             print(f"Error creating work threads: {e}")
             self.conn.rollback()
 
+    def get_next_pending_job(self):
+        try:            
+            # Prepare the SQL query
+            query = """
+                SELECT * FROM povray.render_jobs
+                WHERE render_jobs.status = 'pending'
+                ORDER BY job_id
+                LIMIT 1;
+            """
+            
+            # Execute the query
+            self.cursor.execute(query)
+            
+            # Fetch one job with status 'pending'
+            pending_job = self.cursor.fetchone()
+
+            return pending_job  # Returns a dictionary of the job details
+
+        except MySQLdb.Error as e:
+            print(f"Error: {e}")
+            return None
+            
 def job_scheduler(conn):
     while True:
         # Fetch the next job

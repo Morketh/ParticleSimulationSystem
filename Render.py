@@ -1,72 +1,51 @@
-import subprocess
 from inc.cluster import *
+from dotenv import load_dotenv
+import os
+import subprocess
 import time
 import socket
 
-def render_frame(frame_num, output_file):
-    ini_file = f"frame_{frame_num}.ini"
-    # Generate .ini file for this frame
-    with open(ini_file, 'w') as ini:
-        ini.write(f"""
-        Input_File_Name={output_file}
-        Output_File_Name=frame_{frame_num}.png
-        Width=1920
-        Height=1080
-        Quality=9
-        Antialias=On
-        """)
+def remove_extension(file_name):
+    # Split the file name into the base name and extension
+    base_name, _ = os.path.splitext(file_name)
+    return base_name
 
-    # Run the POV-Ray rendering command
-    subprocess.run(["povray", ini_file])
+def open_pov_template(templateFile,FrameNum,JobName):
+    try:
+        # Open the POV template file in read mode
+        with open(templateFile, 'r') as file:
+            # Read the entire file content
+            template_content = file.read()
 
-def run_render_node(machine_name=socket.gethostname()):
-    conn = connect_db()
-    while True:
-        job = fetch_job(machine_name, conn)
-        if job is None:
-            print(f"No jobs available for {machine_name}. Retrying in a while...")
-            time.sleep(10)
-            continue
+        
+        modified_content = template_content.replace("// PARTICLE_SYSTEM", )
 
-        frame_num = job['frame_num']
-        print(f"Rendering frame {frame_num} on {machine_name}")
+        # Save the modified content to a new file (or overwrite the original)
+        output_file_path = "{}_{}_Frame-{}.pov".format(remove_extension(templateFile),JobName,FrameNum)
+        with open(output_file_path, 'w') as output_file:
+            # TODO MODIFY TEMPLATE WITH PARTICLE DATA
 
-        template_file = 'scene_template.pov'
-        output_pov_file = f'frame_{frame_num:04d}.pov'
-        BuildTemplate(frame_num, template_file, output_pov_file)
-        render_frame(frame_num, output_pov_file)
-        mark_job_done(frame_num, conn)
+            output_file.write(modified_content)
 
-    conn.close()
+        print(f"Modified POV template saved as {output_file_path}")
 
-def BuildTemplate(frame_num, template_file, output_file):
-    conn = connect_db()
-    particles = fetch_particles_for_frame(conn, frame_num)
-    
-    # Read the template
-    with open(template_file, 'r') as file:
-        template = file.read()
-
-    # Prepare particle data in POV-Ray format
-    particle_strings = []
-    for particle in particles:
-        particle_str = f"sphere {{ <{particle['position_x']}, {particle['position_y']}, {particle['position_z']}> {particle['size']} texture {{ pigment {{ color {particle['color']} }} }} }}"
-        particle_strings.append(particle_str)
-    
-    # Join all particles into a single string
-    particle_data = '\n'.join(particle_strings)
-    
-    # Replace the placeholder in the template with the generated particles
-    filled_template = template.replace("// PARTICLE_SYSTEM", particle_data)
-
-    # Write the filled template to the output POV-Ray file
-    with open(output_file, 'w') as output:
-        output.write(filled_template)
-
-    conn.close()
-
+    except FileNotFoundError:
+        print(f"Error: The file {templateFile} does not exist.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    con = connect_db()
-    InitNode(con)
-    job = fetch_job(con)
+        # LOAD settings from the .env file
+    load_dotenv()
+    host = os.getenv('HOST')
+    user = os.getenv('USER')
+    passwrd = os.getenv('PASSWORD')
+    port = os.getenv('PORT')
+    db = os.getenv('DATABASE')
+
+    povCluster = ClusterManager(host=host, user=user, port=port, passwrd=passwrd, db=db)
+    povCluster.connect()
+    print(povCluster.get_next_pending_job())
+
+#    pov_file_path = 'path_to_your_template.pov'
+#    open_pov_template(pov_file_path)

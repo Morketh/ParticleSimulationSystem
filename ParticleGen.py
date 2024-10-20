@@ -17,7 +17,7 @@ if __name__ == "__main__":
     # Global Settings for Render Job (should be pulled from the commandline or job que)
     res_x = 1920
     res_y = 1080
-    AntiAlias = 10
+    AntiAlias = 'on'
     Quality = 11
     fps = 120
     num_frames = 3600
@@ -45,7 +45,7 @@ if __name__ == "__main__":
 # Main loop for inserting particle data frame by frame
     cluster.connect()
     cluster.insert_node_info()
-    jid = cluster.create_job(JobName,num_frames,res_x,res_y,Quality,AntiAlias,10,0.1,2)
+    jid = cluster.create_job(JobName,num_frames,res_x,res_y,fps,Quality,AntiAlias,10,0.1,2)
     cluster.insert_frames(jid,num_frames)
     for frame_num in range(num_frames):
         print("Inserting Frame Data: {:.2f}%".format((frame_num / num_frames) * 100), end='\r', flush=True)
