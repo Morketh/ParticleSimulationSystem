@@ -132,8 +132,7 @@ class ClusterManager:
         query = "SELECT * FROM frames WHERE job_id = %s"
         try:
             self.cursor.execute(query, (job_id,))
-            frames = self.cursor.fetchall()
-            return frames
+            return self.__return_dict()
         except MySQLdb.Error as e:
             print(f"Error fetching frames: {e}")
             return None
@@ -176,7 +175,7 @@ class ClusterManager:
         try:
             self.cursor.execute(query, (status, frame_id))
             self.conn.commit()
-            print(f"Updated frame {frame_id} to status {status}")
+            print(f"Updated frame {frame_id} to status: {status}")
         except MySQLdb.Error as e:
             print(f"Error updating frame status: {e}")
             self.conn.rollback()
@@ -220,8 +219,7 @@ class ClusterManager:
         query = "SELECT frame_id FROM frames WHERE job_id = %s AND status = 'pending' LIMIT 1"
         try:
             self.cursor.execute(query, (job_id,))
-            frame = self.cursor.fetchone()
-            return frame
+            return self.__return_dict()
         except MySQLdb.Error as e:
             print(f"Error fetching available frame: {e}")
             return None
@@ -264,26 +262,23 @@ class ClusterManager:
         memory_info = psutil.virtual_memory()
         memory_gb = round(memory_info.total / (1024 ** 3), 2)  # Convert bytes to GB
         
-        return ip_address, cpu_cores, memory_gb
+        return hostname, ip_address, cpu_cores, memory_gb
 
     def insert_node_info(self, status='active',role='render'):
         """Insert the node's info into the database."""
-        ip_address, cpu_cores, memory_gb = self.get_node_info()
+        hostname, ip_address, cpu_cores, memory_gb = self.get_node_info()
         query = """
-            INSERT INTO nodes (ip_address, cpu_cores, memory_gb, status, role)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO nodes (node_name, ip_address, cpu_cores, memory_gb, status, role)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """
         try:
             # Assuming this is an active render node by default
-            self.cursor.execute(query, (ip_address, cpu_cores, memory_gb, status, role))
+            self.cursor.execute(query, (hostname, ip_address, cpu_cores, memory_gb, status, role))
             self.conn.commit()
             print(f"Registered node with IP: {ip_address}, CPU: {cpu_cores} cores, Memory: {memory_gb} GB")
         except MySQLdb.Error as e:
             print(f"Error inserting node info: {e}")
-        finally:
-            self.cursor.close()
-            self.conn.close()
-    
+
     def get_all_node_info(self):
         """Fetch ip_address, cpu_cores, and memory_gb for all nodes."""
         query = "SELECT ip_address, cpu_cores, memory_gb FROM nodes"
@@ -336,7 +331,63 @@ class ClusterManager:
         except MySQLdb.Error as e:
             print(f"Error: {e}")
             return None
-            
+        
+    def get_particles(self, job_id, frame_id, texture_id):
+        """
+        Retrieve particle data from the database for a specific rendering job and frame.
+
+        This method queries the `particles` table to fetch details about particles 
+        associated with a specific job and frame, including their positions, size, 
+        and corresponding texture name. The results are obtained by joining with 
+        the `textures` table based on the texture ID.
+
+        Args:
+            job_id (int): The unique identifier of the rendering job.
+            frame_id (int): The unique identifier of the frame for which to retrieve particles.
+            texture_id (int): The unique identifier of the texture to filter the results.
+
+        Returns:
+            list: A list of dictionaries, each containing:
+                - 'particle_id' (int): The unique identifier of the particle.
+                - 'position_x' (float): The X position of the particle.
+                - 'position_y' (float): The Y position of the particle.
+                - 'position_z' (float): The Z position of the particle.
+                - 'size' (float): The size of the particle.
+                - 'texture_name' (str): The name of the texture associated with the particle.
+
+        Raises:
+            MySQLdb.Error: If there is an error executing the SQL query.
+        """
+        query = """
+            SELECT p.particle_id, p.position_x, p.position_y, p.position_z, p.size, t.texture_name
+            FROM 
+                `povray`.`particles` p
+            LEFT JOIN 
+                `povray`.`textures` t ON p.texture_id = t.texture_id
+            WHERE p.frame_id = %s AND p.job_id = %s AND t.texture_id = %s
+            """
+        self.cursor.execute(query,(frame_id,job_id,texture_id))
+        return self.__return_dict()
+    
+    def get_textures(self):
+        query = """
+            SELECT texture_id, texture_name
+            FROM `povray`.`textures`
+            """
+        self.cursor.execute(query)
+        return self.__return_dict()
+    
+    def get_total_frames(self,job_id):
+        """Retrieve total frame count from database
+        Args:
+            job_id (int): The unique identifier of the rendering job.
+        Returns:
+            dict: 'total' total frames registerd in DB for a given job_id
+        """
+        query = """SELECT COUNT(*) AS total FROM frames WHERE `job_id` = %s;"""
+        self.cursor.execute(query,(job_id,))
+        return self.__return_dict()[0] #should only be getting a single row for each job so we can strip it here
+
 def job_scheduler(conn):
     while True:
         # Fetch the next job

@@ -61,11 +61,13 @@ CREATE TABLE IF NOT EXISTS `particles` (
   `velocity_y` float NOT NULL,
   `velocity_z` float NOT NULL,
   `size` float NOT NULL,
-  `texture` varchar(255) NOT NULL,
+  `texture_id` int(11) NOT NULL COMMENT 'Links to the corresponding texture.',
   UNIQUE KEY `unique_position_in_frame` (`position_x`,`position_y`,`position_z`,`frame_id`,`particle_id`,`job_id`) USING BTREE,
   KEY `frame_id` (`frame_id`),
   KEY `job_id` (`job_id`),
-  CONSTRAINT `job_id` FOREIGN KEY (`job_id`) REFERENCES `render_jobs` (`job_id`) ON DELETE CASCADE
+  KEY `particles_ibfk_1` (`texture_id`),
+  CONSTRAINT `job_id` FOREIGN KEY (`job_id`) REFERENCES `render_jobs` (`job_id`) ON DELETE CASCADE,
+  CONSTRAINT `particles_ibfk_1` FOREIGN KEY (`texture_id`) REFERENCES `textures` (`texture_id`) ON DELETE NO ACTION
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- Data exporting was unselected.
@@ -88,6 +90,16 @@ CREATE TABLE IF NOT EXISTS `render_jobs` (
   PRIMARY KEY (`job_id`),
   KEY `status` (`status`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Keeps track of rendering jobs';
+
+-- Data exporting was unselected.
+
+-- Dumping structure for table povray.textures
+CREATE TABLE IF NOT EXISTS `textures` (
+  `texture_id` int(11) NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier for the texture.',
+  `texture_name` varchar(255) NOT NULL COMMENT 'Name of the texture.',
+  `texture_description` text DEFAULT NULL COMMENT 'Description of the texture.',
+  PRIMARY KEY (`texture_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Stores information about available textures.';
 
 -- Data exporting was unselected.
 
@@ -117,18 +129,7 @@ CREATE TABLE `view_job_summary` (
 
 -- Dumping structure for view povray.view_particle_summary
 -- Creating temporary table to overcome VIEW dependency errors
-CREATE TABLE `view_particle_summary` (
-	`particle_id` INT(11) NOT NULL,
-	`frame_id` INT(11) NOT NULL,
-	`job_name` VARCHAR(1) NOT NULL COMMENT 'Name of the job.' COLLATE 'utf8mb4_general_ci',
-	`position_x` FLOAT NOT NULL,
-	`position_y` FLOAT NOT NULL,
-	`position_z` FLOAT NOT NULL,
-	`velocity_x` FLOAT NOT NULL,
-	`velocity_y` FLOAT NOT NULL,
-	`velocity_z` FLOAT NOT NULL,
-	`size` FLOAT NOT NULL,
-	`texture` VARCHAR(1) NOT NULL COLLATE 'utf8mb4_general_ci'
+CREATE TABLE `view_particle_summary` 
 ) ENGINE=MyISAM;
 
 -- Dumping structure for table povray.work_threads
