@@ -96,11 +96,22 @@ class ClusterManager:
         """
         query = """
             INSERT INTO particles (particle_id, frame_id, job_id, position_x, position_y, position_z,
-                                  velocity_x, velocity_y, velocity_z, size, texture)
+                              velocity_x, velocity_y, velocity_z, size, texture_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
+        texture_query = "SELECT texture_id FROM textures WHERE texture_name = %s"
         try:
             for particle in particle_data:
+                # Fetch the texture_id based on the texture name
+                self.cursor.execute(texture_query, (particle['texture'],))
+                texture_result = self.cursor.fetchone()
+                
+                if texture_result is None:
+                    print(f"Error: Texture '{particle['texture']}' not found in textures table.")
+                    continue
+
+                texture_id = texture_result[0]  # Extract texture_id from result tuple
+
                 self.cursor.execute(query, (
                     particle['particle_id'],   # Extract individual values from the particle dict
                     frame_id,
@@ -112,7 +123,7 @@ class ClusterManager:
                     particle['velocity'][1],   # velocity_y
                     particle['velocity'][2],   # velocity_z
                     particle['size'],
-                    particle['texture']
+                    texture_id
                 ))
                 self.conn.commit()
         except MySQLdb.Error as e:
