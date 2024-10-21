@@ -196,6 +196,7 @@ class ParticleGenerator:
                 'particle_id': particle['particle_id'],
                 'position': [new_x, new_y, new_z],
                 'size': particle['size'],
+                'velocity': velocity,
                 'texture': particle['texture']
             })
 
