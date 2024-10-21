@@ -29,6 +29,7 @@ def detect_povray_path():
     return povray_path
 
 def CallRenderEngine(job_details,input_file,output_file):
+    current_os = platform.system()
     # Extract job details
     width = job_details[0]['width']
     height = job_details[0]['height']
@@ -36,15 +37,20 @@ def CallRenderEngine(job_details,input_file,output_file):
     antialias = job_details[0]['antialias']
     antialias_depth = job_details[0]['antialias_depth']
     # Construct the POV-Ray command
-    pov_command = [
-        detect_povray_path(),
-        "/Exit",                        # EXIT povray when complete
+    pov_command = [detect_povray_path()]
+    
+    # Platform dependant exit switches
+    if current_os == "Windows":
+        pov_command.append("/Exit")
+    else:
+        pov_command.append("+X")
+
+    pov_command.append(
         f"+I{input_file}",              # Input file
         f"+O{output_file}",             # Output file
         f"+W{width}",                   # Width
         f"+H{height}",                  # Height
-        f"+Q{quality}",                 # Quality
-    ]
+        f"+Q{quality}")                 # Quality
     
     # Handle antialiasing
     if antialias == "on":
@@ -110,6 +116,7 @@ def create_outputDirectory(directory_path):
 
 if __name__ == "__main__":
     # LOAD settings from the .env file
+    # BUG linux system wont pull data correctly from env file concider using alternate format
     load_dotenv()
     host = os.getenv('HOST')
     user = os.getenv('USER')
@@ -124,7 +131,7 @@ if __name__ == "__main__":
 
     # TODO Get mynode role from db
 
-    jobDetails = povCluster.get_next_pending_job()
+    jobDetails = povCluster.get_next_pending_job() # TODO wrap this in a master loop to poll jobs as they are qued for dedicated nodes
     frames = povCluster.get_total_frames(jobDetails[0]['job_id'])
     for i in range(frames['total']):
         frameID = povCluster.get_next_frame(jobDetails[0]['job_id'])[0]['frame_id']
@@ -146,8 +153,8 @@ if __name__ == "__main__":
                 pvOBJ = format_particle_objects(particles)
                 buildOutputFile(template,"output/{}/{}".format(jobDetails[0]['job_name'],outFile),pvOBJ)
 
-        retCode = CallRenderEngine(jobDetails, povFile, pngFile)
+        retCode = CallRenderEngine(jobDetails, povFile, pngFile) # TODO add frame render times to DB started_at && completed_at
         if retCode != 0:
-            povCluster.update_frame_status(frameID, 'error')
+            povCluster.update_frame_status(frameID, 'error') # TODO add error message to DB for recall on managment node
         else:
             povCluster.update_frame_status(frameID, 'rendered')
