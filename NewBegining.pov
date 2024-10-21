@@ -24,7 +24,7 @@ global_settings{ assumed_gamma 1.0 }
 
 #include "CustomTextures.inc"
 
-#declare WaterTex = 1; // 1 = solid (fast), 2 = transparent (slow)
+#declare WaterTex = 3; // 1 = solid (fast), 2 = transparent (slow), 3 = Custom "WaterTexture" see CustomTextures.inc
 
 // Column settings
 #declare ColumnSpacing = 25;
@@ -142,4 +142,17 @@ object { Pilliar translate <-(ColumnSpacing/2), 0, CoumnZ_Offset> texture { Lime
 object { Pilliar translate <(ColumnSpacing/2), 0, CoumnZ_Offset> texture { LimeStoneTexture } }
 
 // Particle System
-// PARTICLE_SYSTEM
+
+union {
+   
+   blob {
+      threshold 1
+//PARTICLE_SYSTEM
+   }
+   
+   #if (WaterTex=1) pigment {color rgb  2} #end
+   #if (WaterTex=2) pigment {color rgbf 1} #end
+   #if (WaterTex=3) texture {WaterTexture} #end
+   finish {reflection {0.1,0.9 fresnel} conserve_energy phong 1 phong_size 20}
+   interior {ior 1.33}
+}
