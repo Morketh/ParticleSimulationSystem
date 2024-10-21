@@ -32,9 +32,50 @@ class ParticleGenerator:
         """
         self.particles = []
 
+    def generate_rain(self, num_drops, mean=0.0015, std_dev=0.0005, min_size=0.0005, max_size=0.004,
+                      wind_direction=[1, 0, 0], wind_velocity=5.0, texture="WaterTexture"):
+        """
+        Generates raindrops using a Gaussian distribution for size, and assigns random positions and velocities.
+
+        Args:
+            num_drops (int): Number of raindrops to generate.
+            mean (float): Mean size of raindrops in mm.
+            std_dev (float): Standard deviation for raindrop size.
+            min_size (float): Minimum raindrop size in mm.
+            max_size (float): Maximum raindrop size in mm.
+            texture (str): Texture to apply to the raindrops (default: "WaterTexture").
+
+        """
+        # Generate raindrop sizes using a Gaussian distribution
+        raindrop_sizes = np.random.normal(loc=mean, scale=std_dev, size=num_drops)
+        raindrop_sizes = np.clip(raindrop_sizes, min_size, max_size)
+
+        for i in range(num_drops):
+            # Random position in the sky, e.g., x, y, z ranges
+            x = random.uniform(-10, 10)  # Adjust ranges as needed
+            y = random.uniform(5, 20)    # Heights for raindrops to fall from
+            z = random.uniform(-10, 10)
+
+            # Initial velocity, assuming raindrops fall vertically
+            velocity_x = wind_velocity * wind_direction[0]
+            velocity_y = -9.8
+            velocity_z = wind_velocity * wind_direction[2]
+
+            # Get the size of the raindrop
+            size = raindrop_sizes[i]
+
+            # Append the particle data to self.particles list
+            self.particles.append({
+                'particle_id': i + 1,
+                'position': [x, y, z],
+                'velocity': [velocity_x, velocity_y, velocity_z],
+                'size': size,
+                'texture': texture
+            })
+
     def generate_conical_fountain(self, num_particles, apex_position, cone_height,
                                   cone_angle, base_radius, wind_direction,
-                                  wind_velocity, texture="WaterTexture"):
+                                  wind_velocity, texture="WaterTexture", drop_sizes=None):
         """
         Generates particles in a conical fountain spray pattern.
 
@@ -48,6 +89,9 @@ class ParticleGenerator:
             wind_velocity (float): The velocity of the wind affecting the particles.
             texture (str, optional): The texture or material to apply to the particles. Defaults to "WaterTexture".
         """
+        if drop_sizes is None:
+            drop_sizes = [random.uniform(0.0005, 0.004) for _ in range(num_particles)]
+
         for i in range(num_particles):
             height = random.uniform(0, cone_height)
             angle = random.uniform(0, 2 * np.pi)  # Angle around the cone
@@ -73,7 +117,7 @@ class ParticleGenerator:
             velocity_z += wind_velocity * wind_direction[2]
 
             # Random particle size and texture
-            size = random.uniform(0.05, 0.15)
+            size = drop_sizes[i]
 
             self.particles.append({
                 'particle_id': i+1,
