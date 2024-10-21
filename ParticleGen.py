@@ -19,8 +19,8 @@ if __name__ == "__main__":
     res_y = 1080
     AntiAlias = 'on'
     Quality = 11
-    fps = 120
-    num_frames = 3600
+    fps = 90
+    num_frames = 2700
     num_particles = 1000
 
     JobName = "Fountain_{}x{}_Q{}_aa{}_fr{}".format(res_x,res_y,Quality,AntiAlias,fps)
