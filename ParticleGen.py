@@ -47,9 +47,10 @@ if __name__ == "__main__":
     cluster.insert_node_info()
     jid = cluster.create_job(JobName,num_frames,res_x,res_y,fps,Quality,AntiAlias,10,0.1,2)
     cluster.insert_frames(jid,num_frames)
+    ParticleAtFrame = []
     for frame_num in range(num_frames):
         print("Inserting Frame Data: {:.2f}%".format((frame_num / num_frames) * 100), end='\r', flush=True)
-        waterParticles.plot_particles_at_frame(frame_num,frame_rate=fps)
-        cluster.insert_particle_data(jid,frame_num,waterParticles.particles)
+        ParticleAtFrame = waterParticles.plot_particles_at_frame(frame_num,frame_rate=fps)
+        cluster.insert_particle_data(jid,frame_num,ParticleAtFrame)
 
     print("Inserting Frame Data: 100%  Done.")
