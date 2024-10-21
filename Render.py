@@ -45,12 +45,12 @@ def CallRenderEngine(job_details,input_file,output_file):
     else:
         pov_command.append("+X")
 
-    pov_command.append(
+    pov_command.extend([
         f"+I{input_file}",              # Input file
         f"+O{output_file}",             # Output file
         f"+W{width}",                   # Width
         f"+H{height}",                  # Height
-        f"+Q{quality}")                 # Quality
+        f"+Q{quality}"])                # Quality
     
     # Handle antialiasing
     if antialias == "on":
