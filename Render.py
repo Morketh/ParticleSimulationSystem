@@ -3,8 +3,6 @@ from dotenv import load_dotenv
 import os
 import subprocess
 import platform
-import time
-import socket
 
 def detect_povray_path():
     current_os = platform.system()
@@ -79,7 +77,7 @@ def format_particle_objects(particle_list):
     """
     particle_objects = []
     for particle in particle_list:
-        obj = (f"sphere {{ <{particle['position_x']}, {particle['position_y']}, {particle['position_z']}> , {particle['size']}, 1.5 }}\n")
+        obj = (f"sphere {{ <{particle['position_x']}, {particle['position_y']}, {particle['position_z']}> , {particle['size']}, 0.5 }}\n")
         particle_objects.append(obj)
     
     return ''.join(particle_objects)

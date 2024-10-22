@@ -3,7 +3,6 @@ import time
 from datetime import datetime
 import socket
 import psutil
-import sys
 
 class ClusterManager:
     """
