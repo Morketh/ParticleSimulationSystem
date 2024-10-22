@@ -224,7 +224,7 @@ class ParticleGenerator:
 
         return updated_particles
     
-    def generate_waterdrop_sizes(num_particles, water_size=1.0, water_sizeturb=0.0, water_falloff=0.0):
+    def generate_waterdrop_sizes(self, num_particles, water_size=1.0, water_sizeturb=0.0, water_falloff=0.0):
         """
         Generates raindrop sizes based on the extracted POV-Ray formula.
 
