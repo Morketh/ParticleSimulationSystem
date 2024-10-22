@@ -2,10 +2,6 @@ import random
 import numpy as np
 
 
-def __vlength(v):
-    """Computes the magnitude (length) of a vector."""
-    return np.sqrt(np.sum(v**2, axis=1))
-
 class ParticleGenerator:
     """
     A class for generating different types of particle simulations, including conical fountain sprays
@@ -30,6 +26,12 @@ class ParticleGenerator:
         """
         self.particles = []
         self.gravity = gravity
+
+    def __vlength(self, v):
+        """Computes the magnitude (length) of a vector."""
+        if v.ndim == 1:
+            v = np.array([v])
+        return np.sqrt(np.sum(v**2, axis=1))
     
     def clear_particles(self):
         """
@@ -202,7 +204,7 @@ class ParticleGenerator:
             new_y = max(new_y, 0)
 
             # Calculate the magnitude of the velocity vector
-            velocity_magnitude = __vlength(velocity)
+            velocity_magnitude = self.__vlength(velocity)
 
             # Apply scaling based on the water size parameters
             # Base size and turbulence
@@ -217,7 +219,7 @@ class ParticleGenerator:
             updated_particles.append({
                 'particle_id': particle['particle_id'],
                 'position': [new_x, new_y, new_z],
-                'size': scale,  # Updated size based on velocity and parameters
+                'size': float(scale),  # Updated size based on velocity and parameters
                 'velocity': velocity,
                 'texture': particle['texture']
             })
