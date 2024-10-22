@@ -223,3 +223,37 @@ class ParticleGenerator:
             })
 
         return updated_particles
+    
+    def generate_waterdrop_sizes(num_particles, water_size=0.02, water_sizeturb=0.0, water_falloff=0.0, water_stretch=0.05):
+        """
+        Generates waterdrop sizes based on the extracted POV-Ray formula with direction-based stretch.
+
+        Args:
+            num_particles (int): Number of particles (waterdrops) to generate.
+            water_size (float): Base size of the waterdrops (in meters).
+            water_sizeturb (float): Turbulence factor for size variation.
+            water_falloff (float): Falloff factor for reducing size based on waterdrop state.
+            water_stretch (float): Stretch factor applied along the direction (z-axis).
+
+        Returns:
+            list: List of waterdrop sizes (in meters).
+        """
+
+        # Generate random values for p_random and p_state for each waterdrop
+        p_random = np.random.random(size=num_particles)  # Random values between 0 and 1
+        p_state = np.random.random(size=num_particles)   # Random state values between 0 and 1
+
+        # Random direction vectors for p_direction (3D vectors)
+        p_direction = np.random.normal(size=(num_particles, 3))  # Random 3D directions
+        direction_length = __vlength(p_direction)  # Compute the magnitude of the direction vectors
+
+        # Apply the formula from the POV-Ray macro for initial scale
+        _scale = (water_size 
+                  * (1 + (p_random - 0.5) * 2 * water_sizeturb)
+                  * (0.001 + 0.999 * np.power(1 - p_state, water_falloff))
+                 )
+
+        # Apply the additional stretch factor along the z-axis (third component of direction)
+        _scale += direction_length * water_stretch
+
+        return _scale
