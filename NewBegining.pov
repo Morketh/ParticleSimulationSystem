@@ -24,7 +24,7 @@ global_settings{ assumed_gamma 1.0 }
 
 #include "CustomTextures.inc"
 
-#declare WaterTex = 3; // 1 = solid (fast), 2 = transparent (slow), 3 = Custom "WaterTexture" see CustomTextures.inc
+#declare WaterTex = 1; // 1 = solid (fast), 2 = transparent (slow), 3 = Custom "WaterTexture" see CustomTextures.inc
 
 // Column settings
 #declare ColumnSpacing = 25;

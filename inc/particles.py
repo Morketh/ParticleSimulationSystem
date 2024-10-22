@@ -1,6 +1,11 @@
 import random
 import numpy as np
 
+
+def __vlength(v):
+    """Computes the magnitude (length) of a vector."""
+    return np.sqrt(np.sum(v**2, axis=1))
+
 class ParticleGenerator:
     """
     A class for generating different types of particle simulations, including conical fountain sprays
@@ -90,7 +95,7 @@ class ParticleGenerator:
             texture (str, optional): The texture or material to apply to the particles. Defaults to "WaterTexture".
         """
         if drop_sizes is None:
-            drop_sizes = [random.uniform(0.0005, 0.004) for _ in range(num_particles)]
+            drop_sizes = self.generate_waterdrop_sizes(num_particles,water_size=0.02)
 
         for i in range(num_particles):
             height = random.uniform(0, cone_height)
@@ -160,14 +165,18 @@ class ParticleGenerator:
                 'texture': texture
             })
 
-    def plot_particles_at_frame(self, frame_number, frame_rate):
+    def plot_particles_at_frame(self, frame_number, frame_rate, water_size=0.02, water_sizeturb=0.2, water_falloff=1.0, water_stretch=0.1):
         """
         Plots the positions of particles at a given frame, considering gravity.
         
         Args:
             frame_number (int): The frame number (F) to calculate particle positions.
             frame_rate (float): The frame rate of the simulation in frames per second (fps).
-        
+            water_size (float): Base size of the raindrops (in meters).
+            water_sizeturb (float): Turbulence factor for size variation.
+            water_falloff (float): Falloff factor for reducing size based on raindrop state.
+            water_stretch (float): Stretch factor applied based on velocity magnitude.
+
         Returns:
             list: A list of updated particle positions at frame F.
         """
@@ -192,10 +201,23 @@ class ParticleGenerator:
             # Prevent particles from falling below ground level (y >= 0)
             new_y = max(new_y, 0)
 
+            # Calculate the magnitude of the velocity vector
+            velocity_magnitude = __vlength(velocity)
+
+            # Apply scaling based on the water size parameters
+            # Base size and turbulence
+            scale = (water_size 
+                     * (1 + (np.random.random() - 0.5) * 2 * water_sizeturb)
+                     * (0.001 + 0.999 * np.power(1 - np.random.random(), water_falloff))
+                    )
+
+            # Apply stretch based on the velocity magnitude
+            scale += velocity_magnitude * water_stretch
+
             updated_particles.append({
                 'particle_id': particle['particle_id'],
                 'position': [new_x, new_y, new_z],
-                'size': particle['size'],
+                'size': scale,  # Updated size based on velocity and parameters
                 'velocity': velocity,
                 'texture': particle['texture']
             })
