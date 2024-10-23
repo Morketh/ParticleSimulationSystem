@@ -324,16 +324,8 @@ class ClusterManager:
             print(f"Error creating work threads: {e}")
             self.conn.rollback()
 
-    def get_next_pending_job(self):
-        try:            
-            # Prepare the SQL query
-            query = """
-                SELECT * FROM povray.render_jobs
-                WHERE render_jobs.status = 'pending'
-                ORDER BY job_id
-                LIMIT 1;
-            """
-            
+    def GetJob(self, query):
+        try:
             # Execute the query
             self.cursor.execute(query)
             return self.__return_dict()  # Returns a dictionary of the job details

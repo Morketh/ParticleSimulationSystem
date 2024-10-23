@@ -77,7 +77,7 @@ def format_particle_objects(particle_list):
     """
     particle_objects = []
     for particle in particle_list:
-        obj = (f"sphere {{ <{particle['position_x']}, {particle['position_y']}, {particle['position_z']}> , {particle['size']}, 0.5 }}\n")
+        obj = (f"sphere {{ <{particle['position_x']}, {particle['position_y']}, {particle['position_z']}> , {particle['size']}, 1.5 }}\n")
         particle_objects.append(obj)
     
     return ''.join(particle_objects)
@@ -128,8 +128,13 @@ if __name__ == "__main__":
     povCluster.insert_node_info('active','render')
 
     # TODO Get mynode role from db
-
-    jobDetails = povCluster.get_next_pending_job() # TODO wrap this in a master loop to poll jobs as they are qued for dedicated nodes
+    Pending_Jobs = """
+                SELECT * FROM povray.render_jobs
+                WHERE render_jobs.status = 'pending'
+                ORDER BY job_id
+                LIMIT 1;
+            """
+    jobDetails = povCluster.GetJob(Pending_Jobs) # TODO wrap this in a master loop to poll jobs as they are qued for dedicated nodes
     frames = povCluster.get_total_frames(jobDetails[0]['job_id'])
     for i in range(frames['total']):
         frameID = povCluster.get_next_frame(jobDetails[0]['job_id'])[0]['frame_id']
@@ -145,11 +150,15 @@ if __name__ == "__main__":
         # Build frame render info
         textures = povCluster.get_textures()
         particles = []
+        # BUG grab particles and then grab there textures,
+        # we also need to replace the template file to use the placeholder values in the DB
         for _, t in enumerate(textures): # Get all particles in frame group by texture
             particles = povCluster.get_particles(jobDetails[0]['job_id'], frameID, t['texture_id'])
             if particles:
                 pvOBJ = format_particle_objects(particles)
                 buildOutputFile(template,"output/{}/{}".format(jobDetails[0]['job_name'],outFile),pvOBJ)
+            else:
+                print("Zero Particles Found for system: {}!".format(t['texture_name']))
 
         retCode = CallRenderEngine(jobDetails, povFile, pngFile) # TODO add frame render times to DB started_at && completed_at
         if retCode != 0:
