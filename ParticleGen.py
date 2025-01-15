@@ -17,10 +17,10 @@ if __name__ == "__main__":
     # Global Settings for Render Job (should be pulled from the commandline or job que)
     res_x = 1920
     res_y = 1080
-    AntiAlias = 'on'
+    AntiAlias = 'off'
     Quality = 11
-    fps = 90
-    num_frames = 2700
+    fps = 45
+    num_frames = 1000
     num_particles = 1000
 
     JobName = "Fountain_{}x{}_Q{}_aa{}_fr{}".format(res_x,res_y,Quality,AntiAlias,fps)
@@ -33,7 +33,7 @@ if __name__ == "__main__":
 
     # Define wind direction (as a unit vector) and velocity
     wind_direction = [1, 0.5, 0]  # Wind blowing along the x-axis
-    wind_velocity = 2.0  # Wind speed
+    wind_velocity = 0.0  # Wind speed
 
     cluster = ClusterManager(host=host, user=user, port=port, passwrd=passwrd, db=db)
     node_info = cluster.get_node_info()
