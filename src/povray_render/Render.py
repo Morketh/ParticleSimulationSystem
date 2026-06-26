@@ -1,167 +1,296 @@
-from povray_render.cluster import *
-from dotenv import load_dotenv
+#!/usr/bin/env python3
+# src/povray_render/Render.py
+"""Render node daemon – polls the database for pending frames and renders them with POV‑Ray.
+
+This script runs an infinite loop, fetching the next pending frame for a job,
+building the POV‑Ray scene with particle data, invoking the renderer, and
+updating the database accordingly.
+"""
+
+import asyncio
 import os
-import subprocess
 import platform
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Optional
 
-def detect_povray_path():
+from dotenv import load_dotenv
+
+from DBCore import create_database_provider
+
+from .cluster import ClusterManager
+from .particles import ParticleGenerator  # not directly used here, but for reference
+
+# ----------------------------------------------------------------------------
+# Local config class matching DBCore's DatabaseConfigProtocol
+# ----------------------------------------------------------------------------
+class SimpleConfig:
+    def __init__(self, **kwargs):
+        self.provider_type = kwargs.get("provider_type")
+        self.sqlite_driver = kwargs.get("sqlite_driver")
+        self.db_path = kwargs.get("db_path")
+        self.db_host = kwargs.get("db_host")
+        self.db_port = kwargs.get("db_port")
+        self.db_user = kwargs.get("db_user")
+        self.db_password = kwargs.get("db_password")
+        self.db_database = kwargs.get("db_database")
+
+
+# ----------------------------------------------------------------------------
+# Helper functions
+# ----------------------------------------------------------------------------
+
+def detect_povray_path() -> str:
+    """
+    Locate the POV‑Ray executable on the current system.
+    Returns the path as a string, or exits on failure.
+    """
     current_os = platform.system()
-
     if current_os == "Windows":
-        # Default path for Windows POV-Ray installation (update if needed)
-        povray_path = r"C:\Program Files\POV-Ray\v3.7\bin\pvengine64.exe"
-    elif current_os == "Darwin":  # macOS
-        # Default path for macOS POV-Ray installation (update if needed)
-        povray_path = "/Applications/POV-Ray 3.7/POV-Ray.app/Contents/MacOS/POV-Ray"
-    else:  # Linux or other Unix-like systems
-        try:
-            # Run 'which povray' command to find POV-Ray in the system's PATH
-            result = subprocess.run(['which', 'povray'], capture_output=True, text=True, check=True)
-            povray_path = result.stdout.strip()  # Get the output and remove any extra spaces/newlines
-        except subprocess.CalledProcessError:
-            # Handle the case where POV-Ray is not found in PATH
-            print("Error: POV-Ray executable not found in system's PATH. Please install POV-Ray or specify the correct path.")
-            povray_path = None
-            exit(-1)
-
-    return povray_path
-
-def CallRenderEngine(job_details,input_file,output_file):
-    current_os = platform.system()
-    # Extract job details
-    width = job_details[0]['width']
-    height = job_details[0]['height']
-    quality = job_details[0]['quality']
-    antialias = job_details[0]['antialias']
-    antialias_depth = job_details[0]['antialias_depth']
-    # Construct the POV-Ray command
-    pov_command = [detect_povray_path()]
-    
-    # Platform dependant exit switches
-    if current_os == "Windows":
-        pov_command.append("/Exit")
+        # Default Windows path (may need to be adjusted)
+        return r"C:\Program Files\POV-Ray\v3.7\bin\pvengine64.exe"
+    elif current_os == "Darwin":
+        # macOS default path
+        return "/Applications/POV-Ray 3.7/POV-Ray.app/Contents/MacOS/POV-Ray"
     else:
-        pov_command.append("+X")
+        # Linux/Unix: try `which povray`
+        try:
+            result = subprocess.run(
+                ["which", "povray"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return result.stdout.strip()
+        except subprocess.CalledProcessError:
+            print("Error: POV-Ray executable not found in PATH. Please install POV-Ray or set the path.", file=sys.stderr)
+            sys.exit(1)
 
-    pov_command.extend([
-        f"+I{input_file}",              # Input file
-        f"+O{output_file}",             # Output file
-        f"+W{width}",                   # Width
-        f"+H{height}",                  # Height
-        f"+Q{quality}"])                # Quality
-    
-    # Handle antialiasing
-    if antialias == "on":
-        pov_command.append(f"+A")
-        pov_command.append(f"+R{antialias_depth}")  # Antialias depth
-    
-    # Execute the POV-Ray command
-    print(f"Rendering: {input_file} -> {output_file}")
-    proc = subprocess.run(pov_command)
+
+def format_particle_objects(particles: list[dict[str, Any]]) -> str:
+    """
+    Format a list of particle dictionaries into POV‑Ray object syntax.
+
+    Each dict must contain:
+        position_x, position_y, position_z, size
+
+    Returns a string of sphere declarations.
+    """
+    lines = []
+    for p in particles:
+        x, y, z = p["position_x"], p["position_y"], p["position_z"]
+        size = p["size"]
+        lines.append(f"sphere {{ <{x}, {y}, {z}>, {size}, 1.5 }}")
+    return "\n".join(lines)
+
+
+def build_output_file(template_path: Path, output_path: Path, particle_objects: str) -> None:
+    """
+    Read a POV‑Ray template file, replace the //PARTICLE_SYSTEM marker,
+    and write the result to output_path.
+    """
+    content = template_path.read_text(encoding="utf-8")
+    content = content.replace("//PARTICLE_SYSTEM", particle_objects)
+    output_path.write_text(content, encoding="utf-8")
+
+
+async def run_povray(
+    input_file: Path,
+    output_file: Path,
+    width: int,
+    height: int,
+    quality: int,
+    antialias: bool,
+    antialias_depth: int,
+) -> int:
+    """
+    Invoke POV‑Ray as a subprocess to render the given file.
+
+    Returns the return code (0 = success).
+    """
+    povray = detect_povray_path()
+    cmd = [povray]
+    if platform.system() == "Windows":
+        cmd.append("/Exit")
+    else:
+        cmd.append("+X")
+
+    cmd.extend([
+        f"+I{input_file}",
+        f"+O{output_file}",
+        f"+W{width}",
+        f"+H{height}",
+        f"+Q{quality}",
+    ])
+    if antialias:
+        cmd.append("+A")
+        cmd.append(f"+R{antialias_depth}")
+
+    print(f"  Rendering: {input_file.name} -> {output_file.name}")
+    proc = await asyncio.to_thread(
+        subprocess.run,
+        cmd,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        print(f"    POV‑Ray failed with code {proc.returncode}: {proc.stderr}", file=sys.stderr)
     return proc.returncode
 
-def remove_extension(file_name):
-    # Split the file name into the base name and extension
-    base_name, _ = os.path.splitext(file_name)
-    return base_name
 
-def format_particle_objects(particle_list):
+def remove_extension(path: Path) -> str:
+    """Return the file name without its extension."""
+    return path.stem
+
+
+def create_output_directory(path: Path) -> None:
+    """Ensure the output directory exists."""
+    path.mkdir(parents=True, exist_ok=True)
+
+
+# ----------------------------------------------------------------------------
+# Main render loop
+# ----------------------------------------------------------------------------
+
+async def render_loop(
+    cluster: ClusterManager,
+    template_path: Path,
+    poll_interval: int = 10,
+) -> None:
     """
-    Format the particle data into POV-Ray object syntax.
+    Infinite loop: poll for pending frames, render them, and update status.
 
     Args:
-        particle_list (list): List of particle dictionaries.
-
-    Returns:
-        str: Formatted string for POV-Ray objects.
+        cluster: Initialised ClusterManager.
+        template_path: Path to the POV‑Ray template file.
+        poll_interval: Seconds to wait between polls.
     """
-    particle_objects = []
-    for particle in particle_list:
-        obj = (f"sphere {{ <{particle['position_x']}, {particle['position_y']}, {particle['position_z']}> , {particle['size']}, 1.5 }}\n")
-        particle_objects.append(obj)
-    
-    return ''.join(particle_objects)
+    print(f"Render node started. Polling every {poll_interval}s...")
+    while True:
+        try:
+            # 1. Fetch the next pending frame
+            frame = await cluster.get_next_frame(job_id=1)  # TODO: support multiple jobs
+            # For now, we assume a single job; later we could query for the earliest pending job.
+            # Better: we need a method to get the next pending job. For simplicity, we'll use job_id=1.
+            # In a real system, we'd have a job scheduler.
+            # For now, we'll fetch the first pending frame from any job.
+            # We'll need a method to get the next pending frame across all jobs.
+            # Let's adjust ClusterManager to have a method `get_next_available_frame()` that finds any pending frame.
+            # Since we haven't added that, we'll fallback to using raw SQL for this.
+            # TODO: add proper job scheduling.
+            # For now, we'll just get the first pending frame from the frames table.
+            rows = await cluster.db.fetch_all(
+                "SELECT frame_id, job_id FROM frames WHERE status = 'pending' LIMIT 1"
+            )
+            if not rows:
+                await asyncio.sleep(poll_interval)
+                continue
+            frame_id = rows[0]["frame_id"]
+            job_id = rows[0]["job_id"]
 
-def buildOutputFile(template_file_path, output_file_path, particle_objects):
-    """
-    Writes a POV file with particle data using a template as a base for static objects
+            # 2. Mark frame as 'in progress'
+            await cluster.update_frame_status(frame_id, "in progress")
 
-    Args:
-        template_file_path (str): Path to the template POV file.
-        output_file_path (str): Path to save the modified POV file.
-        particle_objects (str): The particle objects string to insert.
+            # 3. Fetch job details (render settings)
+            job_rows = await cluster.db.fetch_all(
+                "SELECT width, height, quality, antialias, antialias_depth FROM render_jobs WHERE job_id = %s",
+                (job_id,)
+            )
+            if not job_rows:
+                print(f"Job {job_id} not found. Skipping frame {frame_id}.")
+                await cluster.update_frame_status(frame_id, "error")
+                continue
+            job = job_rows[0]
 
-    Returns:
-        None
-    """
-    with open(template_file_path, 'r') as file:
-        content = file.read()
-    # Write the updated content to the output file
-    content = content.replace("//PARTICLE_SYSTEM", particle_objects)
-    with open(output_file_path, 'w') as file:
-        file.write(content)
+            # 4. Fetch particles for this frame, grouped by texture
+            textures = await cluster.get_textures()
+            all_particles = []
+            for tex in textures:
+                tex_id = tex["texture_id"]
+                particles = await cluster.get_particles(job_id, frame_id, tex_id)
+                if particles:
+                    all_particles.extend(particles)
 
-def create_outputDirectory(directory_path):
-    """
-    Creates a directory if it does not already exist.
+            # 5. Build the POV file
+            job_name_rows = await cluster.db.fetch_all(
+                "SELECT job_name FROM render_jobs WHERE job_id = %s",
+                (job_id,)
+            )
+            job_name = job_name_rows[0]["job_name"] if job_name_rows else "unknown"
+            output_dir = Path("output") / job_name
+            create_output_directory(output_dir)
+            out_pov = output_dir / f"{remove_extension(template_path)}_frame-{frame_id:04d}.pov"
+            particle_objects = format_particle_objects(all_particles)
+            build_output_file(template_path, out_pov, particle_objects)
 
-    Args:
-        directory_path (str): The path of the directory to create.
-    """
-    if not os.path.exists(directory_path):
-        os.makedirs(directory_path)
-        print(f"Directory {directory_path} created.")
+            # 6. Render the frame
+            png_file = output_dir / f"{remove_extension(template_path)}_frame-{frame_id:04d}.png"
+            ret = await run_povray(
+                out_pov,
+                png_file,
+                width=job["width"],
+                height=job["height"],
+                quality=job["quality"],
+                antialias=job["antialias"] == "on",
+                antialias_depth=job["antialias_depth"],
+            )
+
+            # 7. Update frame status
+            if ret == 0:
+                await cluster.update_frame_status(frame_id, "rendered")
+                print(f"Frame {frame_id} rendered successfully.")
+            else:
+                await cluster.update_frame_status(frame_id, "error")
+                print(f"Frame {frame_id} failed.")
+
+        except Exception as e:
+            print(f"Error in render loop: {e}")
+            await asyncio.sleep(poll_interval)
+
+
+# ----------------------------------------------------------------------------
+# Entry point
+# ----------------------------------------------------------------------------
+
+async def main() -> None:
+    """Set up database connection and start the render loop."""
+    load_dotenv()
+    backend = os.getenv("DB_BACKEND", "mariadb")
+
+    config = SimpleConfig(
+        provider_type=backend,
+        db_host=os.getenv("DB_HOST"),
+        db_port=int(os.getenv("DB_PORT", 3306)),
+        db_user=os.getenv("DB_USER"),
+        db_password=os.getenv("DB_PASSWORD"),
+        db_database=os.getenv("DB_DATABASE"),
+        sqlite_driver=os.getenv("SQLITE_DRIVER", "apsw") if backend == "sqlite" else None,
+        db_path=os.getenv("DB_PATH") if backend == "sqlite" else None,
+    )
+
+    db = create_database_provider(config)
+    await db.initialize()
+
+    cluster = ClusterManager(db)
+
+    # Register this node as a render node
+    await cluster.insert_node_info(status="active", role="render")
+
+    # Path to the template POV file
+    template = Path(os.getenv("TEMPLATE_FILE", "scenes/NewBegining.pov"))
+    if not template.exists():
+        raise FileNotFoundError(f"Template file not found: {template}")
+
+    poll_interval = int(os.getenv("POLL_INTERVAL", 10))
+
+    try:
+        await render_loop(cluster, template, poll_interval)
+    except KeyboardInterrupt:
+        print("\nRender node shutting down.")
+    finally:
+        await db.close()
+
 
 if __name__ == "__main__":
-    # LOAD settings from the .env file
-    # BUG linux system wont pull data correctly from env file concider using alternate format
-    load_dotenv()
-    host = os.getenv('HOST')
-    user = os.getenv('USER')
-    passwrd = os.getenv('PASSWORD')
-    port = os.getenv('PORT')
-    db = os.getenv('DATABASE')
-    template = 'NewBegining.pov'
-
-    povCluster = ClusterManager(host=host, user=user, port=port, passwrd=passwrd, db=db)
-    povCluster.connect()
-    povCluster.insert_node_info('active','render')
-
-    # TODO Get mynode role from db
-    Pending_Jobs = """
-                SELECT * FROM povray.render_jobs
-                WHERE render_jobs.status = 'pending'
-                ORDER BY job_id
-                LIMIT 1;
-            """
-    jobDetails = povCluster.GetJob(Pending_Jobs) # TODO wrap this in a master loop to poll jobs as they are qued for dedicated nodes
-    frames = povCluster.get_total_frames(jobDetails[0]['job_id'])
-    for i in range(frames['total']):
-        frameID = povCluster.get_next_frame(jobDetails[0]['job_id'])[0]['frame_id']
-        
-        outFile = "{}_frame-{:04d}.pov".format(remove_extension(template),frameID)
-        povFile = "output/{}/{}".format(jobDetails[0]['job_name'],outFile)
-        pngFile = "output/{}/{}_frame-{:04d}".format(jobDetails[0]['job_name'],remove_extension(template),frameID)
-        
-        create_outputDirectory("output/{}".format(jobDetails[0]['job_name']))
-
-        povCluster.update_frame_status(frameID, 'in progress')
-
-        # Build frame render info
-        textures = povCluster.get_textures()
-        particles = []
-        # BUG grab particles and then grab there textures,
-        # we also need to replace the template file to use the placeholder values in the DB
-        for _, t in enumerate(textures): # Get all particles in frame group by texture
-            particles = povCluster.get_particles(jobDetails[0]['job_id'], frameID, t['texture_id'])
-            if particles:
-                pvOBJ = format_particle_objects(particles)
-                buildOutputFile(template,"output/{}/{}".format(jobDetails[0]['job_name'],outFile),pvOBJ)
-            else:
-                print("Zero Particles Found for system: {}!".format(t['texture_name']))
-
-        retCode = CallRenderEngine(jobDetails, povFile, pngFile) # TODO add frame render times to DB started_at && completed_at
-        if retCode != 0:
-            povCluster.update_frame_status(frameID, 'error') # TODO add error message to DB for recall on managment node
-        else:
-            povCluster.update_frame_status(frameID, 'rendered')
+    asyncio.run(main())
