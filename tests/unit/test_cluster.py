@@ -1,5 +1,4 @@
-# tests/unit/test_cluster.py
-"""Unit tests for ClusterManager using mocked DatabaseProvider."""
+# tests/unit/test_cluster.py (full corrected file)
 
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
@@ -12,18 +11,19 @@ from povray_render.cluster import ClusterManager
 
 @pytest.fixture
 def mock_db():
-    """Create a mock DatabaseProvider."""
+    """Create a mock DatabaseProvider with all needed async methods."""
     db = Mock()
     db.execute_ir = AsyncMock()
     db.bulk_insert_ir = AsyncMock()
     db.fetch_all_ir = AsyncMock()
-    db.execute_raw = AsyncMock(return_value=([{"LAST_INSERT_ID()": 42}], "log"))
+    # NEW: mock for raw SELECT queries
+    db.fetch_all = AsyncMock(return_value=[{"LAST_INSERT_ID()": 42}])
+    db.execute_raw = AsyncMock(return_value=([], "log"))
     return db
 
 
 @pytest.fixture
 def cluster(mock_db):
-    """ClusterManager with mocked DB."""
     return ClusterManager(mock_db)
 
 
@@ -43,6 +43,7 @@ async def test_create_job(cluster, mock_db):
         sampling_method=2,
     )
     assert job_id == 42
+
     mock_db.execute_ir.assert_awaited_once()
     insert = mock_db.execute_ir.call_args[0][0]
     assert isinstance(insert, IRInsert)
@@ -75,12 +76,10 @@ async def test_get_next_frame(cluster, mock_db):
     assert select.table == "frames"
     assert select.limit == 1
 
-    # Now the where clause is a LogicalExpression with AND and two conditions
     cond = select.where
     assert isinstance(cond, LogicalExpression)
     assert cond.operator == "AND"
     assert len(cond.conditions) == 2
-    # Check each condition
     cond1, cond2 = cond.conditions
     assert isinstance(cond1, Condition)
     assert cond1.column == "job_id"

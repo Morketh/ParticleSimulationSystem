@@ -6,8 +6,8 @@ from typing import Any, Optional
 
 import psutil
 from DBCore.base import DatabaseProvider
-from DBCore.ir import IRBulkInsert, IRDelete, IRInsert, IRSelect, IRUpdate, LogicalExpression
-from DBCore.ir.conditions import Condition
+from DBCore.ir import IRBulkInsert, IRDelete, IRInsert, IRSelect, IRUpdate
+from DBCore.ir.conditions import Condition, LogicalExpression
 
 
 class ClusterManager:
@@ -17,10 +17,6 @@ class ClusterManager:
     """
 
     def __init__(self, db: DatabaseProvider):
-        """
-        Args:
-            db: Initialized DBCore DatabaseProvider (e.g., MariaDB, SQLite).
-        """
         self.db = db
 
     # ------------------------------------------------------------------
@@ -28,10 +24,10 @@ class ClusterManager:
     # ------------------------------------------------------------------
 
     async def _last_insert_id(self) -> int:
-        """Fetch the last auto‑increment ID using raw SQL."""
-        res, _ = await self.db.execute_raw("SELECT LAST_INSERT_ID()", unsafe=True)
-        if res and len(res) > 0:
-            return res[0]["LAST_INSERT_ID()"]
+        """Fetch the last auto‑increment ID using a SELECT query."""
+        rows = await self.db.fetch_all("SELECT LAST_INSERT_ID()")
+        if rows and len(rows) > 0:
+            return rows[0]["LAST_INSERT_ID()"]
         raise RuntimeError("Could not retrieve last insert ID")
 
     # ------------------------------------------------------------------
@@ -76,17 +72,14 @@ class ClusterManager:
         Execute an arbitrary SELECT query (use only when IR can't express it).
         Returns a list of dicts.
         """
-        res, _ = await self.db.execute_raw(query, unsafe=True)
-        return res
+        return await self.db.fetch_all(query)
 
     async def get_total_frames(self, job_id: int) -> int:
-        """Return total frame count for a job."""
-        select = IRSelect(
-            table="frames",
-            columns=["COUNT(*) as total"],
-            where=Condition("job_id", "=", job_id),
+        """Return total frame count for a job using raw SQL (aggregate expression)."""
+        rows = await self.db.fetch_all(
+            "SELECT COUNT(*) as total FROM frames WHERE job_id = %s",
+            (job_id,)
         )
-        rows = await self.db.fetch_all_ir(select)
         return rows[0]["total"] if rows else 0
 
     async def update_job_status(self, job_id: int, status: str) -> None:
@@ -130,20 +123,6 @@ class ClusterManager:
         )
         rows = await self.db.fetch_all_ir(select)
         return rows[0] if rows else None
-    
-    async def get_active_render_nodes(self) -> list[dict[str, Any]]:
-        """Fetch all active render nodes."""
-        select = IRSelect(
-            table="nodes",
-            where=LogicalExpression(
-                operator="AND",
-                conditions=[
-                    Condition("role", "=", "render"),
-                    Condition("status", "=", "active"),
-                ]
-            ),
-        )
-        return await self.db.fetch_all_ir(select)
 
     async def update_frame_status(self, frame_id: int, status: str) -> None:
         """Update the status of a specific frame."""
@@ -176,16 +155,13 @@ class ClusterManager:
             particle_id, position (list of 3 floats), velocity (list of 3 floats),
             size, texture (string name)
         """
-        # First, map texture names to texture_id
         texture_map = await self._get_texture_id_map()
         rows = []
         for p in particle_data:
-            tex_name = p.get("texture", "WaterTexture")  # fallback
+            tex_name = p.get("texture", "WaterTexture")
             tex_id = texture_map.get(tex_name)
             if tex_id is None:
-                # Texture not found – you may want to insert it, but we'll skip.
-                # For safety, raise or use a default.
-                tex_id = 1  # default, or you could auto‑create
+                tex_id = 1  # fallback, better to raise/log
             rows.append(
                 [
                     p["particle_id"],
@@ -248,8 +224,7 @@ class ClusterManager:
             WHERE p.frame_id = %s AND p.job_id = %s AND t.texture_id = %s
         """
         params = (frame_id, job_id, texture_id)
-        res, _ = await self.db.execute_raw(sql, params, unsafe=True)
-        return res
+        return await self.db.fetch_all(sql, params)
 
     async def get_textures(self) -> list[dict[str, Any]]:
         """Fetch all textures."""
@@ -272,14 +247,12 @@ class ClusterManager:
     async def insert_node_info(self, status: str = "active", role: str = "render") -> None:
         """Insert or update node info."""
         hostname, ip_address, cpu_cores, memory_gb = self.get_node_info()
-        # Check if node already exists (by hostname) – update or insert.
         select = IRSelect(
             table="nodes",
             where=Condition("node_name", "=", hostname),
         )
         existing = await self.db.fetch_all_ir(select)
         if existing:
-            # Update
             update = IRUpdate(
                 table="nodes",
                 set_values={
@@ -306,6 +279,20 @@ class ClusterManager:
             )
             await self.db.execute_ir(insert)
 
+    async def get_active_render_nodes(self) -> list[dict[str, Any]]:
+        """Fetch all active render nodes."""
+        select = IRSelect(
+            table="nodes",
+            where=LogicalExpression(
+                operator="AND",
+                conditions=[
+                    Condition("role", "=", "render"),
+                    Condition("status", "=", "active"),
+                ]
+            ),
+        )
+        return await self.db.fetch_all_ir(select)
+
     async def get_all_node_info(self) -> list[dict[str, Any]]:
         """Fetch ip_address, cpu_cores, memory_gb for all nodes."""
         select = IRSelect(
@@ -320,7 +307,6 @@ class ClusterManager:
 
     async def create_work_threads(self, job_id: int, frame_ids: list[int], node_id: int) -> None:
         """Assign frames to a node as work threads."""
-        # Use bulk insert for efficiency
         rows = [[node_id, job_id, fid, "queued"] for fid in frame_ids]
         if rows:
             bulk = IRBulkInsert(
