@@ -1,408 +1,343 @@
-import MySQLdb
-import time
-from datetime import datetime
+# src/povray_render/cluster.py
+"""ClusterManager for distributed POV-Ray rendering, powered by DBCore IR."""
+
 import socket
+from typing import Any, Optional
+
 import psutil
+from DBCore.base import DatabaseProvider
+from DBCore.ir import IRBulkInsert, IRDelete, IRInsert, IRSelect, IRUpdate, LogicalExpression
+from DBCore.ir.conditions import Condition
+
 
 class ClusterManager:
     """
-    A class to manage the connection and operations of a database cluster
-    for rendering jobs, particles, and nodes in a distributed system.
-
-    This class provides methods to establish a connection to a MySQL database,
-    manage jobs, frames, particles, and monitor nodes within a Beowulf cluster.
-    The connection details are provided during initialization, and the class
-    manages the database cursor and connection for executing SQL queries.
-    
-    Attributes:
-        conn (MySQLdb.Connection): The MySQL database connection object (None until connected).
-        cursor (MySQLdb.Cursor): The cursor for executing SQL queries (None until connected).
-        host (str): The database host (IP address or domain) to connect to.
-        port (int): The port number used for connecting to the database.
-        user (str): The username for authenticating with the database.
-        password (str): The password for the database connection (using the port value for demo purposes).
-        database (str): The name of the database to use.
-
-    Methods:
-        __init__(self, host, user, port, db):
-            Initializes the ClusterManager instance with database connection parameters.
+    Manages the render cluster database operations using DBCore IR.
+    Replaces MySQLdb with async DBCore methods.
     """
-    def __init__(self, host, user, port, db, passwrd):
-        """
-        Initializes the ClusterManager class with the connection parameters for the MySQL database.
 
+    def __init__(self, db: DatabaseProvider):
+        """
         Args:
-            host (str): The hostname or IP address of the MySQL server.
-            user (str): The username used to authenticate with the MySQL database.
-            port (int): The port number for the MySQL connection (default is typically 3306).
-            db (str): The name of the database to connect to.
-            passwrd (str): The password for the database user
+            db: Initialized DBCore DatabaseProvider (e.g., MariaDB, SQLite).
+        """
+        self.db = db
 
-        Attributes:
-            conn (MySQLdb.Connection): Initially set to None. The connection to the MySQL database will be established later.
-            cursor (MySQLdb.Cursor): Initially set to None. The cursor for executing SQL queries will be created after connecting.
-            host (str): Stores the database host address.
-            port (int): Stores the port number for the MySQL connection.
-            user (str): Stores the username for MySQL authentication.
-            password (str): For demo purposes, stores the port number (should be the actual password in real use).
-            database (str): Stores the name of the database to connect to.
-        """
-        self.conn = None
-        self.cursor = None
-        self.host=host
-        self.port=int(port)
-        self.user=user
-        self.password=passwrd
-        self.database=db
+    # ------------------------------------------------------------------
+    #  Helpers
+    # ------------------------------------------------------------------
 
-    def __return_dict(self):
-           # Get column names from the cursor
-           columns = [col[0] for col in self.cursor.description]
-           # Fetch all rows and convert each row into a dictionary
-           return [dict(zip(columns, row)) for row in self.cursor.fetchall()]
-        
-# Function to connect to the MySQL database
-    def connect(self):
+    async def _last_insert_id(self) -> int:
+        """Fetch the last auto‑increment ID using raw SQL."""
+        res, _ = await self.db.execute_raw("SELECT LAST_INSERT_ID()", unsafe=True)
+        if res and len(res) > 0:
+            return res[0]["LAST_INSERT_ID()"]
+        raise RuntimeError("Could not retrieve last insert ID")
+
+    # ------------------------------------------------------------------
+    #  Jobs
+    # ------------------------------------------------------------------
+
+    async def create_job(
+        self,
+        job_name: str,
+        num_frames: int,
+        res_x: int,
+        res_y: int,
+        fps: int,
+        quality: int,
+        antialias: str,
+        antialias_depth: int,
+        antialias_threshold: float,
+        sampling_method: int,
+    ) -> int:
+        """Create a new render job and return its job_id."""
+        insert = IRInsert(
+            table="render_jobs",
+            values={
+                "job_name": job_name,
+                "total_frames": num_frames,
+                "width": res_x,
+                "height": res_y,
+                "fps": fps,
+                "quality": quality,
+                "antialias": antialias,
+                "antialias_depth": antialias_depth,
+                "antialias_threshold": antialias_threshold,
+                "sampling_method": sampling_method,
+                "status": "pending",
+            },
+        )
+        await self.db.execute_ir(insert)
+        return await self._last_insert_id()
+
+    async def get_job(self, query: str) -> list[dict[str, Any]]:
         """
-        Establishes a connection to the MySQL database using the provided credentials.
+        Execute an arbitrary SELECT query (use only when IR can't express it).
+        Returns a list of dicts.
         """
-        try:
-            self.conn = MySQLdb.Connect(host=self.host,user=self.user,passwd=self.password,db=self.database,port=self.port)
-            self.cursor = self.conn.cursor()
-            print("Connection established")
-        except MySQLdb.Error as e:
-            print("Error connecting to database: {}".format(e))
-            exit(-1)
+        res, _ = await self.db.execute_raw(query, unsafe=True)
+        return res
+
+    async def get_total_frames(self, job_id: int) -> int:
+        """Return total frame count for a job."""
+        select = IRSelect(
+            table="frames",
+            columns=["COUNT(*) as total"],
+            where=Condition("job_id", "=", job_id),
+        )
+        rows = await self.db.fetch_all_ir(select)
+        return rows[0]["total"] if rows else 0
+
+    async def update_job_status(self, job_id: int, status: str) -> None:
+        """Update the job status."""
+        update = IRUpdate(
+            table="render_jobs",
+            set_values={"status": status},
+            where=Condition("job_id", "=", job_id),
+        )
+        await self.db.execute_ir(update)
+
+    # ------------------------------------------------------------------
+    #  Frames
+    # ------------------------------------------------------------------
+
+    async def insert_frames(self, job_id: int, num_frames: int) -> None:
+        """Insert multiple frames for a job (one row per frame)."""
+        for frame_num in range(1, num_frames + 1):
+            insert = IRInsert(
+                table="frames",
+                values={
+                    "job_id": job_id,
+                    "frame_id": frame_num,
+                    "status": "pending",
+                },
+            )
+            await self.db.execute_ir(insert)
+
+    async def get_next_frame(self, job_id: int) -> Optional[dict[str, Any]]:
+        """Fetch the first pending frame for a job."""
+        select = IRSelect(
+            table="frames",
+            where=LogicalExpression(
+                operator="AND",
+                conditions=[
+                    Condition("job_id", "=", job_id),
+                    Condition("status", "=", "pending"),
+                ]
+            ),
+            limit=1,
+        )
+        rows = await self.db.fetch_all_ir(select)
+        return rows[0] if rows else None
     
-    def disconnect(self):
-        """
-        Closes the connection to the database and the cursor.
-        """
-        if self.cursor:
-            self.cursor.close()
-        if self.conn:
-            self.conn.close()
-        print("Connection closed")
+    async def get_active_render_nodes(self) -> list[dict[str, Any]]:
+        """Fetch all active render nodes."""
+        select = IRSelect(
+            table="nodes",
+            where=LogicalExpression(
+                operator="AND",
+                conditions=[
+                    Condition("role", "=", "render"),
+                    Condition("status", "=", "active"),
+                ]
+            ),
+        )
+        return await self.db.fetch_all_ir(select)
 
-    def insert_particle_data(self, job_id, frame_id, particle_data):
-        """
-        Inserts all particles for a given frame into the particles table.
+    async def update_frame_status(self, frame_id: int, status: str) -> None:
+        """Update the status of a specific frame."""
+        update = IRUpdate(
+            table="frames",
+            set_values={"status": status},
+            where=Condition("frame_id", "=", frame_id),
+        )
+        await self.db.execute_ir(update)
 
-        Args:
-            job_id (int): The ID of the job.
-            frame_id (int): the frame number.
-            particle_job (list): list of dict values for particles
-        """
-        query = """
-            INSERT INTO particles (particle_id, frame_id, job_id, position_x, position_y, position_z,
-                              velocity_x, velocity_y, velocity_z, size, texture_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        texture_query = "SELECT texture_id FROM textures WHERE texture_name = %s"
-        try:
-            for particle in particle_data:
-                # Fetch the texture_id based on the texture name
-                self.cursor.execute(texture_query, (particle['texture'],))
-                texture_result = self.cursor.fetchone()
-                
-                if texture_result is None:
-                    print(f"Error: Texture '{particle['texture']}' not found in textures table.")
-                    continue
+    async def fetch_frame_by_job(self, job_id: int) -> list[dict[str, Any]]:
+        """Fetch all frames for a job (with all columns)."""
+        select = IRSelect(table="frames", where=Condition("job_id", "=", job_id))
+        return await self.db.fetch_all_ir(select)
 
-                texture_id = texture_result[0]  # Extract texture_id from result tuple
+    # ------------------------------------------------------------------
+    #  Particles
+    # ------------------------------------------------------------------
 
-                self.cursor.execute(query, (
-                    particle['particle_id'],   # Extract individual values from the particle dict
+    async def insert_particle_data(
+        self,
+        job_id: int,
+        frame_id: int,
+        particle_data: list[dict],
+    ) -> None:
+        """
+        Insert many particles for a frame using bulk insert.
+
+        particle_data: list of dicts with keys:
+            particle_id, position (list of 3 floats), velocity (list of 3 floats),
+            size, texture (string name)
+        """
+        # First, map texture names to texture_id
+        texture_map = await self._get_texture_id_map()
+        rows = []
+        for p in particle_data:
+            tex_name = p.get("texture", "WaterTexture")  # fallback
+            tex_id = texture_map.get(tex_name)
+            if tex_id is None:
+                # Texture not found – you may want to insert it, but we'll skip.
+                # For safety, raise or use a default.
+                tex_id = 1  # default, or you could auto‑create
+            rows.append(
+                [
+                    p["particle_id"],
                     frame_id,
                     job_id,
-                    particle['position'][0],   # position_x
-                    particle['position'][1],   # position_y
-                    particle['position'][2],   # position_z
-                    particle['velocity'][0],   # velocity_x
-                    particle['velocity'][1],   # velocity_y
-                    particle['velocity'][2],   # velocity_z
-                    particle['size'],
-                    texture_id
-                ))
-                self.conn.commit()
-        except MySQLdb.Error as e:
-            print(f"Error inserting particle data: {e}")
-            self.conn.rollback()
+                    p["position"][0],
+                    p["position"][1],
+                    p["position"][2],
+                    p["velocity"][0],
+                    p["velocity"][1],
+                    p["velocity"][2],
+                    p["size"],
+                    tex_id,
+                ]
+            )
 
-    def fetch_frame_by_job(self, job_id):
+        if not rows:
+            return
+
+        bulk = IRBulkInsert(
+            table="particles",
+            columns=[
+                "particle_id",
+                "frame_id",
+                "job_id",
+                "position_x",
+                "position_y",
+                "position_z",
+                "velocity_x",
+                "velocity_y",
+                "velocity_z",
+                "size",
+                "texture_id",
+            ],
+            values=rows,
+        )
+        await self.db.bulk_insert_ir(bulk)
+
+    async def _get_texture_id_map(self) -> dict[str, int]:
+        """Fetch all texture_name -> texture_id mappings."""
+        select = IRSelect(table="textures", columns=["texture_id", "texture_name"])
+        rows = await self.db.fetch_all_ir(select)
+        return {row["texture_name"]: row["texture_id"] for row in rows}
+
+    async def get_particles(
+        self,
+        job_id: int,
+        frame_id: int,
+        texture_id: int,
+    ) -> list[dict[str, Any]]:
         """
-        Fetches all frames associated with a given job.
-
-        Args:
-            job_id (int): The ID of the job.
-
-        Returns:
-            list: A list of frames associated with the job.
+        Fetch particles for a given job, frame, and texture.
+        Uses a join with textures, executed via raw SQL because IR cannot join yet.
         """
-        query = "SELECT * FROM frames WHERE job_id = %s"
-        try:
-            self.cursor.execute(query, (job_id,))
-            return self.__return_dict()
-        except MySQLdb.Error as e:
-            print(f"Error fetching frames: {e}")
-            return None
-
-    def insert_frames(self, job_id, num_frames):
+        sql = """
+            SELECT p.particle_id, p.position_x, p.position_y, p.position_z,
+                   p.size, t.texture_name
+            FROM particles p
+            LEFT JOIN textures t ON p.texture_id = t.texture_id
+            WHERE p.frame_id = %s AND p.job_id = %s AND t.texture_id = %s
         """
-        Inserts multiple frames into the frames table for a given job.
+        params = (frame_id, job_id, texture_id)
+        res, _ = await self.db.execute_raw(sql, params, unsafe=True)
+        return res
 
-        Args:
-            job_id (int): The ID of the job.
-            num_frames (int): The number of frames to insert.
-        """
-        query = """
-                INSERT INTO frames (job_id, frame_id, status)
-                VALUES (%s, %s, %s)
-            """
-        try:
-            for frame_number in range(1, num_frames + 1):
-                print(f"Adding frames: {frame_number/num_frames*100:.2f}%", end='\r', flush=True)
-                self.cursor.execute(query, (job_id, frame_number, 'pending'))
+    async def get_textures(self) -> list[dict[str, Any]]:
+        """Fetch all textures."""
+        select = IRSelect(table="textures")
+        return await self.db.fetch_all_ir(select)
 
-            print("Adding frames: 100.00%  Done.")
-            self.conn.commit()
+    # ------------------------------------------------------------------
+    #  Nodes
+    # ------------------------------------------------------------------
 
-            print(f"Submitted job {job_id} with {num_frames} frames.")
-            return job_id
-        except MySQLdb.Error as e:
-            print(f"Error adding frames: {e}")
-            return None
-
-    def update_frame_status(self, frame_id, status):
-        """
-        Updates the status of a specific frame in the frames table.
-
-        Args:
-            frame_id (int): The ID of the frame.
-            status (str): The new status of the frame (e.g., 'rendering', 'completed').
-        """
-        query = "UPDATE frames SET status = %s WHERE frame_id = %s"
-        try:
-            self.cursor.execute(query, (status, frame_id))
-            self.conn.commit()
-            print(f"Updated frame {frame_id} to status: {status}")
-        except MySQLdb.Error as e:
-            print(f"Error updating frame status: {e}")
-            self.conn.rollback()
-
-    def create_job(self, job_name, num_frames, res_x, res_y, fps, quality, antialias,
-                antialias_depth, antialias_threshold, sampling_method):
-        """
-        Creates a new render job in the render_jobs table.
-
-        Args:
-            job_name (str): The name of the job.
-            num_frames (int): The total number of frames in the job.
-            res_x (int): The width of the render in pixels.
-            res_y (int): The height of the render in pixels.
-            quality (int): The quality setting for the render.
-            antialias (bool): Whether antialiasing is enabled.
-            antialias_depth (int): The depth of antialiasing.
-            antialias_threshold (float): The antialiasing threshold.
-            sampling_method (int): The method of sampling for antialiasing.
-        Return:
-            job_id (int): job ID from SQL server or None if failed.
-        """
-        query = """
-            INSERT INTO render_jobs (job_name, total_frames, width, height, fps, quality, antialias, antialias_depth, antialias_threshold, sampling_method)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """ 
-        try:
-            self.cursor.execute(query, (job_name, num_frames, res_x, res_y, fps, quality, antialias,
-                antialias_depth, antialias_threshold, sampling_method))
-            self.conn.commit()
-            job_id = self.cursor.lastrowid
-            print(f"Created job {job_name} with job_id {job_id}")
-            return job_id
-        except MySQLdb.Error as e:
-            print(f"Error creating job: {e}")
-            self.conn.rollback()
-            return None
-
-    def get_next_frame(self, job_id):
-        """Get the next available frame for rendering (i.e., pending)."""
-        query = "SELECT frame_id FROM frames WHERE job_id = %s AND status = 'pending' LIMIT 1"
-        try:
-            self.cursor.execute(query, (job_id,))
-            return self.__return_dict()
-        except MySQLdb.Error as e:
-            print(f"Error fetching available frame: {e}")
-            return None
-    
-    def get_active_render_nodes(self):
-        """Fetch all active render nodes."""
-        query = "SELECT * FROM nodes WHERE role = 'render' AND status = 'active'"
-        try:
-            self.cursor.execute(query)
-            render_nodes = self.cursor.fetchall()
-            return render_nodes
-        except MySQLdb.Error as e:
-            print(f"Error fetching render nodes: {e}")
-            return None
-        
-    def get_node_info(self):
-        """
-        Fetches the current machine's system information including the IP address,
-        number of CPU cores, and total memory in GB.
-
-        This method gathers the following information:
-        1. **IP Address**: Obtains the machine's local IP address using the `socket` library.
-        2. **CPU Cores**: Retrieves the number of logical CPU cores using the `psutil` library.
-        3. **Memory**: Fetches the total memory (RAM) in gigabytes using `psutil`.
-
-        Returns:
-            tuple: A tuple containing the following elements:
-                - ip_address (str): The IP address of the current machine.
-                - cpu_cores (int): The number of logical CPU cores.
-                - memory_gb (float): The total memory in gigabytes, rounded to two decimal places.
-        """
-        # Get IP address
+    @staticmethod
+    def get_node_info() -> tuple[str, str, int, float]:
+        """Gather local system info."""
         hostname = socket.gethostname()
         ip_address = socket.gethostbyname(hostname)
-        
-        # Get CPU cores
         cpu_cores = psutil.cpu_count(logical=True)
-        
-        # Get total memory in GB
-        memory_info = psutil.virtual_memory()
-        memory_gb = round(memory_info.total / (1024 ** 3), 2)  # Convert bytes to GB
-        
+        memory_gb = round(psutil.virtual_memory().total / (1024 ** 3), 2)
         return hostname, ip_address, cpu_cores, memory_gb
 
-    def insert_node_info(self, status='active',role='render'):
-        """Insert the node's info into the database."""
+    async def insert_node_info(self, status: str = "active", role: str = "render") -> None:
+        """Insert or update node info."""
         hostname, ip_address, cpu_cores, memory_gb = self.get_node_info()
-        query = """
-            INSERT INTO nodes (node_name, ip_address, cpu_cores, memory_gb, status, role)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            """
-        try:
-            # Assuming this is an active render node by default
-            self.cursor.execute(query, (hostname, ip_address, cpu_cores, memory_gb, status, role))
-            self.conn.commit()
-            print(f"Registered node with IP: {ip_address}, CPU: {cpu_cores} cores, Memory: {memory_gb} GB")
-        except MySQLdb.Error as e:
-            print(f"Error inserting node info: {e}")
+        # Check if node already exists (by hostname) – update or insert.
+        select = IRSelect(
+            table="nodes",
+            where=Condition("node_name", "=", hostname),
+        )
+        existing = await self.db.fetch_all_ir(select)
+        if existing:
+            # Update
+            update = IRUpdate(
+                table="nodes",
+                set_values={
+                    "ip_address": ip_address,
+                    "cpu_cores": cpu_cores,
+                    "memory_gb": memory_gb,
+                    "status": status,
+                    "role": role,
+                },
+                where=Condition("node_name", "=", hostname),
+            )
+            await self.db.execute_ir(update)
+        else:
+            insert = IRInsert(
+                table="nodes",
+                values={
+                    "node_name": hostname,
+                    "ip_address": ip_address,
+                    "cpu_cores": cpu_cores,
+                    "memory_gb": memory_gb,
+                    "status": status,
+                    "role": role,
+                },
+            )
+            await self.db.execute_ir(insert)
 
-    def get_all_node_info(self):
-        """Fetch ip_address, cpu_cores, and memory_gb for all nodes."""
-        query = "SELECT ip_address, cpu_cores, memory_gb FROM nodes"
-        try:
-            self.cursor.execute(query)
-            nodes = self.cursor.fetchall()
-            return nodes
-        except MySQLdb.Error as e:
-            print(f"Error fetching node info: {e}")
-            return None
-        finally:
-            self.conn.commit()
+    async def get_all_node_info(self) -> list[dict[str, Any]]:
+        """Fetch ip_address, cpu_cores, memory_gb for all nodes."""
+        select = IRSelect(
+            table="nodes",
+            columns=["ip_address", "cpu_cores", "memory_gb"],
+        )
+        return await self.db.fetch_all_ir(select)
 
-    def create_work_threads(self, job_id, frame_ids, node_id):
-        """
-        Creates work threads for the given frames, assigning them to a specific node for rendering.
+    # ------------------------------------------------------------------
+    #  Work Threads
+    # ------------------------------------------------------------------
 
-        Args:
-            job_id (int): The ID of the job.
-            frame_ids (list): List of frame IDs to assign to work threads.
-            node_id (int): The ID of the node handling the frames.
-        """
-        query = """
-            INSERT INTO work_threads (node_id, job_id, frame_id)
-            VALUES (%s, %s, %s)
-        """
-        try:
-            for frame_id in frame_ids:
-                self.cursor.execute(query, (node_id, job_id, frame_id))
-            self.conn.commit()
-            print(f"Created work threads for job {job_id} on node {node_id}")
-        except MySQLdb.Error as e:
-            print(f"Error creating work threads: {e}")
-            self.conn.rollback()
+    async def create_work_threads(self, job_id: int, frame_ids: list[int], node_id: int) -> None:
+        """Assign frames to a node as work threads."""
+        # Use bulk insert for efficiency
+        rows = [[node_id, job_id, fid, "queued"] for fid in frame_ids]
+        if rows:
+            bulk = IRBulkInsert(
+                table="work_threads",
+                columns=["node_id", "job_id", "frame_id", "status"],
+                values=rows,
+            )
+            await self.db.bulk_insert_ir(bulk)
 
-    def GetJob(self, query):
-        try:
-            # Execute the query
-            self.cursor.execute(query)
-            return self.__return_dict()  # Returns a dictionary of the job details
+    # ------------------------------------------------------------------
+    #  Connection (no‑op – handled by provider)
+    # ------------------------------------------------------------------
 
-        except MySQLdb.Error as e:
-            print(f"Error: {e}")
-            return None
-        
-    def get_particles(self, job_id, frame_id, texture_id):
-        """
-        Retrieve particle data from the database for a specific rendering job and frame.
+    async def connect(self) -> None:
+        """No‑op: provider is already initialised."""
+        pass
 
-        This method queries the `particles` table to fetch details about particles 
-        associated with a specific job and frame, including their positions, size, 
-        and corresponding texture name. The results are obtained by joining with 
-        the `textures` table based on the texture ID.
-
-        Args:
-            job_id (int): The unique identifier of the rendering job.
-            frame_id (int): The unique identifier of the frame for which to retrieve particles.
-            texture_id (int): The unique identifier of the texture to filter the results.
-
-        Returns:
-            list: A list of dictionaries, each containing:
-                - 'particle_id' (int): The unique identifier of the particle.
-                - 'position_x' (float): The X position of the particle.
-                - 'position_y' (float): The Y position of the particle.
-                - 'position_z' (float): The Z position of the particle.
-                - 'size' (float): The size of the particle.
-                - 'texture_name' (str): The name of the texture associated with the particle.
-
-        Raises:
-            MySQLdb.Error: If there is an error executing the SQL query.
-        """
-        query = """
-            SELECT p.particle_id, p.position_x, p.position_y, p.position_z, p.size, t.texture_name
-            FROM 
-                `povray`.`particles` p
-            LEFT JOIN 
-                `povray`.`textures` t ON p.texture_id = t.texture_id
-            WHERE p.frame_id = %s AND p.job_id = %s AND t.texture_id = %s
-            """
-        self.cursor.execute(query,(frame_id,job_id,texture_id))
-        return self.__return_dict()
-    
-    def get_textures(self):
-        query = """
-            SELECT texture_id, texture_name
-            FROM `povray`.`textures`
-            """
-        self.cursor.execute(query)
-        return self.__return_dict()
-    
-    def get_total_frames(self,job_id):
-        """Retrieve total frame count from database
-        Args:
-            job_id (int): The unique identifier of the rendering job.
-        Returns:
-            dict: 'total' total frames registerd in DB for a given job_id
-        """
-        query = """SELECT COUNT(*) AS total FROM frames WHERE `job_id` = %s;"""
-        self.cursor.execute(query,(job_id,))
-        return self.__return_dict()[0] #should only be getting a single row for each job so we can strip it here
-
-def job_scheduler(conn):
-    while True:
-        # Fetch the next job
-        cursor = conn.cursor()
-        cursor.execute("SELECT job_id FROM job_queue WHERE status = 'queued' LIMIT 1")
-        job = cursor.fetchone()
-
-        if job:
-            job_id = job[0]
-            # Update job status to 'processing'
-            cursor.execute("UPDATE job_queue SET status = 'processing' WHERE job_id = %s", (job_id,))
-            conn.commit()
-
-            # Assign frames and manage threads...
-        
-        time.sleep(5)  # Wait before checking again
+    async def disconnect(self) -> None:
+        """No‑op: provider closing is handled by the caller."""
+        pass
