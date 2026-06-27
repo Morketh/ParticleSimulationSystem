@@ -2,19 +2,23 @@
 """Pytest configuration and fixtures for the Particle Simulation System tests."""
 
 import asyncio
+import logging
 import os
 import sys
 import uuid
-from pathlib import Path
 
+import asyncmy
 import pytest
 import pytest_asyncio
+from DBCore import create_database_provider
 from dotenv import load_dotenv
 
-from DBCore import create_database_provider
-from DBCore.base import DatabaseProvider
+from storage.cluster import ClusterManager
 
-from povray_render.cluster import ClusterManager
+# ----------------------------------------------------------------------------
+# Suppress asyncmy warnings that break pytest logging
+# ----------------------------------------------------------------------------
+logging.getLogger("asyncmy").setLevel(logging.ERROR)
 
 
 # ----------------------------------------------------------------------------
@@ -27,6 +31,21 @@ load_dotenv()
 # Local SimpleConfig (matches DBCore's DatabaseConfigProtocol)
 # ----------------------------------------------------------------------------
 class SimpleConfig:
+    """Simple configuration container for database connection parameters.
+
+    Attributes:
+    provider_type (str | None): Database provider type, e.g., 'sqlite', 'postgres'.
+    sqlite_driver (str | None): SQLite driver name if using SQLite.
+    db_path (str | None): File path to the SQLite database file.
+    db_host (str | None): Database server hostname or IP address.
+    db_port (str | None): Database server port number.
+    db_user (str | None): Username for database authentication.
+    db_password (str | None): Password for database authentication.
+    db_database (str | None): Name of the specific database to connect to.
+
+    Args:
+    **kwargs: Arbitrary keyword arguments corresponding to the above attributes.
+    """
     def __init__(self, **kwargs):
         self.provider_type = kwargs.get("provider_type")
         self.sqlite_driver = kwargs.get("sqlite_driver")
@@ -65,7 +84,6 @@ def pytest_sessionstart(session):
 
 async def _drop_database(db_name: str, config: dict) -> None:
     """Drop the test database using a separate connection."""
-    import asyncmy
     conn = await asyncmy.connect(
         host=config["host"],
         port=config["port"],
@@ -101,7 +119,7 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 # ----------------------------------------------------------------------------
-# Fixtures – all async fixtures MUST be function‑scoped to avoid event‑loop mismatch
+# Fixtures - all async fixtures MUST be function-scoped to avoid event-loop mismatch
 # ----------------------------------------------------------------------------
 
 @pytest.fixture(scope="session")
@@ -113,8 +131,8 @@ def test_db_name() -> str:
 
 @pytest_asyncio.fixture(scope="function")  # <-- CRITICAL: function scope
 async def db_provider(test_db_name):
-    """
-    Create a DBCore provider connected to the test database.
+    """Create a DBCore provider connected to the test database.
+
     The database is created if it does not exist.
     """
     backend = os.getenv("DB_BACKEND", "mariadb")
@@ -134,7 +152,6 @@ async def db_provider(test_db_name):
 
     # For MariaDB/MySQL, ensure the database exists
     if backend in ("mariadb", "mysql"):
-        import asyncmy
         sys_conn = await asyncmy.connect(
             host=config.db_host,
             port=config.db_port,
@@ -153,9 +170,7 @@ async def db_provider(test_db_name):
 
 @pytest_asyncio.fixture(scope="function")  # <-- CRITICAL: function scope
 async def cluster_with_schema(db_provider):
-    """
-    ClusterManager instance with a full schema applied.
-    """
+    """ClusterManager instance with a full schema applied."""
     cluster = ClusterManager(db_provider)
 
     # Create tables (simplified from install.sql)
@@ -172,6 +187,9 @@ async def cluster_with_schema(db_provider):
             antialias_depth INTEGER,
             antialias_threshold FLOAT,
             sampling_method INTEGER,
+            gravity FLOAT NOT NULL DEFAULT 9.81,
+            water_level FLOAT NOT NULL DEFAULT 0.0,
+            preset_id INTEGER,
             status VARCHAR(20) DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -196,6 +214,7 @@ async def cluster_with_schema(db_provider):
         )
     """, unsafe=True)
 
+    # Insert default textures
     for tex in ["WaterTexture", "Jade", "FireTexture", "LimeStoneTexture"]:
         await db_provider.execute_raw(
             "INSERT IGNORE INTO textures (texture_name) VALUES (%s)",
@@ -204,42 +223,114 @@ async def cluster_with_schema(db_provider):
         )
 
     await db_provider.execute_raw("""
-        CREATE TABLE IF NOT EXISTS particles (
-            particle_id INTEGER,
-            frame_id INTEGER,
-            job_id INTEGER,
-            position_x FLOAT,
-            position_y FLOAT,
-            position_z FLOAT,
-            velocity_x FLOAT,
-            velocity_y FLOAT,
-            velocity_z FLOAT,
-            size FLOAT,
-            texture_id INTEGER,
-            PRIMARY KEY (particle_id, frame_id, job_id),
+        CREATE TABLE IF NOT EXISTS texture_presets (
+            preset_id INTEGER PRIMARY KEY AUTO_INCREMENT,
+            texture_id INTEGER NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            pigment_r FLOAT NOT NULL DEFAULT 1.0,
+            pigment_g FLOAT NOT NULL DEFAULT 1.0,
+            pigment_b FLOAT NOT NULL DEFAULT 1.0,
+            pigment_t FLOAT NOT NULL DEFAULT 0.0,
+            ambient FLOAT NOT NULL DEFAULT 0.1,
+            diffuse FLOAT NOT NULL DEFAULT 0.9,
+            reflection FLOAT NOT NULL DEFAULT 0.0,
+            specular FLOAT NOT NULL DEFAULT 0.0,
+            roughness FLOAT NOT NULL DEFAULT 0.0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (texture_id) REFERENCES textures(texture_id) ON DELETE CASCADE
+        )
+    """, unsafe=True)
+
+    await db_provider.execute_raw("""
+        CREATE TABLE IF NOT EXISTS particle_births (
+            birth_id INTEGER PRIMARY KEY AUTO_INCREMENT,
+            job_id INTEGER NOT NULL,
+            particle_id INTEGER NOT NULL,
+            birth_time FLOAT NOT NULL,
+            x0 FLOAT NOT NULL,
+            y0 FLOAT NOT NULL,
+            z0 FLOAT NOT NULL,
+            vx0 FLOAT NOT NULL,
+            vy0 FLOAT NOT NULL,
+            vz0 FLOAT NOT NULL,
+            size FLOAT NOT NULL,
+            texture_id INTEGER NOT NULL,
+            seed INTEGER NOT NULL,
+            impact_time FLOAT DEFAULT NULL,
+            UNIQUE KEY (job_id, particle_id),
+            FOREIGN KEY (job_id) REFERENCES render_jobs(job_id) ON DELETE CASCADE,
+            FOREIGN KEY (texture_id) REFERENCES textures(texture_id)
+        )
+    """, unsafe=True)
+
+    await db_provider.execute_raw("""
+        CREATE TABLE IF NOT EXISTS simulation_metrics (
+            id INTEGER PRIMARY KEY AUTO_INCREMENT,
+            job_id INTEGER NOT NULL,
+            time FLOAT NOT NULL,
+            particle_count INTEGER DEFAULT 0,
+            min_x FLOAT DEFAULT NULL,
+            max_x FLOAT DEFAULT NULL,
+            min_y FLOAT DEFAULT NULL,
+            max_y FLOAT DEFAULT NULL,
+            min_z FLOAT DEFAULT NULL,
+            max_z FLOAT DEFAULT NULL,
+            avg_velocity FLOAT DEFAULT NULL,
+            max_velocity FLOAT DEFAULT NULL,
+            kinetic_energy FLOAT DEFAULT NULL,
+            potential_energy FLOAT DEFAULT NULL,
+            total_energy FLOAT DEFAULT NULL,
+            momentum_x FLOAT DEFAULT NULL,
+            momentum_y FLOAT DEFAULT NULL,
+            momentum_z FLOAT DEFAULT NULL,
+            nan_count INTEGER DEFAULT 0,
+            inf_count INTEGER DEFAULT 0,
+            UNIQUE KEY (job_id, time),
+            FOREIGN KEY (job_id) REFERENCES render_jobs(job_id) ON DELETE CASCADE
+        )
+    """, unsafe=True)
+
+    await db_provider.execute_raw("""
+        CREATE TABLE IF NOT EXISTS frame_particle_cache (
+            cache_id INTEGER PRIMARY KEY AUTO_INCREMENT,
+            job_id INTEGER NOT NULL,
+            frame INTEGER NOT NULL,
+            particle_data LONGTEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY (job_id, frame),
+            FOREIGN KEY (job_id) REFERENCES render_jobs(job_id) ON DELETE CASCADE
         )
     """, unsafe=True)
 
     await db_provider.execute_raw("""
         CREATE TABLE IF NOT EXISTS nodes (
             node_id INTEGER PRIMARY KEY AUTO_INCREMENT,
-            node_name VARCHAR(255),
-            ip_address VARCHAR(45),
-            cpu_cores INTEGER,
-            memory_gb FLOAT,
-            status VARCHAR(20),
-            role VARCHAR(20)
+            node_name VARCHAR(255) NOT NULL,
+            ip_address VARCHAR(45) NOT NULL,
+            role ENUM('master','render','database','storage','monitor','generator') NOT NULL,
+            status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+            last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            cpu_cores INTEGER NOT NULL,
+            memory_gb FLOAT NOT NULL DEFAULT 0
         )
     """, unsafe=True)
 
     await db_provider.execute_raw("""
         CREATE TABLE IF NOT EXISTS work_threads (
             thread_id INTEGER PRIMARY KEY AUTO_INCREMENT,
-            node_id INTEGER,
-            job_id INTEGER,
-            frame_id INTEGER,
-            status VARCHAR(20)
+            node_id INTEGER NOT NULL,
+            job_id INTEGER NOT NULL,
+            frame_id INTEGER NOT NULL,
+            status ENUM('queued','processing','completed') DEFAULT 'queued',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY (node_id),
+            KEY (job_id),
+            KEY (frame_id),
+            KEY (job_id, frame_id),
+            FOREIGN KEY (node_id) REFERENCES nodes(node_id) ON DELETE CASCADE,
+            FOREIGN KEY (job_id) REFERENCES render_jobs(job_id) ON DELETE CASCADE,
+            FOREIGN KEY (job_id, frame_id) REFERENCES frames(job_id, frame_id) ON DELETE CASCADE
         )
     """, unsafe=True)
 
