@@ -1,31 +1,122 @@
 [project]
 name = "povray-render-system"
 version = "0.1.0"
+requires-python = ">=3.13"
 description = "Distributed POV-Ray rendering pipeline with CollectiveCore"
 authors = [{name = "AdmiralMorketh"}]
 dependencies = [
-    "collective-cores @ git+ssh://git@CollectiveCore/CollectiveIndustries/CollectiveCore.git@v0.2.0",
-    "numpy>=1.24",
+    "vapory @ git+ssh://git@vapory/Morketh/vapory.git",
+    "collective-cores @ git+ssh://git@CollectiveCore/CollectiveIndustries/CollectiveCore.git@v0.2.1",
+    "numpy>=2.5.0",
     "python-dotenv>=1.0",
-    "psutil>=5.9",
-    "platformdirs>=4.0",    # optional
+    "psutil>=7.2.2",
+    "matplotlib>=3.7",           # for validation visualisation
+    "pandas>=3.0.3",               # for metrics analysis
+    "platformdirs>=4.0",         # optional, for OS-agnostic paths
 ]
-requires-python = ">=3.11"
+
 
 [project.scripts]
-render-node = "povray_render.render:main"
-generate-particles = "povray_render.particle_gen:main"
-make-mp4 = "povray_render.make_mp4:main"
+generate = "generator:main_sync"
+render = "render:main_sync"
+validate = "render.validator:main"   # optional stand-alone validation script
+make-mp4 = "make_mp4:main_sync"
+
+[build-system]
+requires = ["pdm-pep517"]
+build-backend = "pdm.pep517.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "-q",
+    "--cov=src",           # measure coverage for all packages
+    "--cov-report=term:skip-covered",        # terminal report
+    "--cov-report=html",        # HTML report (htmlcov/)
+    "--cov-fail-under=70",      # fail if below 70%
+    "--no-cov-on-fail",
+]
+log_cli_level = "ERROR"
+log_format = "%%(asctime)s %%(levelname)s %%(message)s"
+log_date_format = "%%Y-%%m-%%d %%H:%%M:%%S"
+cache_dir = ".cache"
+asyncio_mode = "auto"
+
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+]
+
+[tool.coverage]
+# Only include the package source, exclude tests
+source = ["src"]
+# Exclude any files you don't want to count (e.g., __init__.py, test helpers)
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 160
+
+exclude = [
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "data",
+    "debug",
+    "logs",
+    "backups",
+    "tests/**/fixtures/**",
+]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",      # pycodestyle + pyflakes
+    "B",                # bugbear
+    "I",                # import sorting
+    "UP",               # pyupgrade
+    "SIM",              # simplification
+    "C4",               # comprehensions
+    "C90",              # complexity
+    "PLC", "PLE",       # pylint baseline checks
+    "RUF",              # ruff rules
+    "D",                # docstrings (MANDATORY POLICY)
+    "TID"               # Enable Banned API see section bellow
+]
+
+ignore = [
+    "E501",      # handled by formatter
+    "B008",      # dependency injection patterns
+    "B904",      # exception chaining flexibility
+    "C901",      # allowed complexity in core services
+    "PLR0912",   # branches
+    "PLR0915",   # statements
+    "SIM108",    # readability preference
+
+    "D203", "D213",   # conflicting doc conventions
+    "D105",           # dunder methods optional
+    "D107",           # __init__ docstring optional
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.pdm]
 distribution = true
 package-dir = "src"
 
-[build-system]
-requires = ["pdm-pep517"]
-build-backend = "pdm.pep517.api"
+[tool.pdm.scripts]
+test = "pytest"
+lint = "ruff check ."
+fix = "ruff check . --fix"
+format = "ruff format ."
+pipeline = "python -m ToolCore.pipeline"
+
+
 [dependency-groups]
 dev = [
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
+    "pytest>=9.0",
+    "pytest-asyncio>=1.4",
+    "pytest-cov>=7.0",
+    "ruff>=0.6",
+    "radon>=6.0.1",
 ]

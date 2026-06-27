@@ -320,3 +320,9 @@ Generator/__temp__.pov
 *.data
 output/*
 .env
+.coverage
+htmlcov/
+.cache
+.pytest_cache
+.ruff_cache
+output/
